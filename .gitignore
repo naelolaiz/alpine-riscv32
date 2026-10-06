@@ -3,6 +3,8 @@
 # to the aports checkout, but guard against a mount from the wrong directory)
 .config/
 .abuild/
+.local/
+.cache/
 packages/
 sysroot-*/
 *.log
