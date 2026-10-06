@@ -1,0 +1,48 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: naelolaiz <1333555+naelolaiz@users.noreply.github.com>
+Date: Tue, 6 Oct 2026 22:58:52 +0000
+Subject: [PATCH 2/5] main/gcc: add riscv32
+
+---
+ main/gcc/APKBUILD | 8 +++++++-
+ 1 file changed, 7 insertions(+), 1 deletion(-)
+
+diff --git a/main/gcc/APKBUILD b/main/gcc/APKBUILD
+index 8e27e655..8dde8eb1 100644
+--- a/main/gcc/APKBUILD
++++ b/main/gcc/APKBUILD
+@@ -119,7 +119,7 @@ case "$CTARGET_ARCH" in
+ # GDC hasn't been ported to PowerPC (LIBDRUNTIME_ONLY=yes)
+ # See libphobos/configure.tgt in GCC sources for supported targets
+ # riscv fails with: error: static assert  "unimplemented"
+-ppc*|riscv64)	LANG_D=false ;;
++ppc*|riscv32|riscv64)	LANG_D=false ;;
+ # GDC does currently not work on 32-bit musl architectures.
+ # This is a known upstream issue.
+ # See: https://github.com/dlang/druntime/pull/3383
+@@ -130,9 +130,14 @@ esac
+ case "$CTARGET_ARCH" in
+ arm*)		_libitm=false ;;
+ mips*)		_libitm=false ;;
++riscv32)	_libitm=false ;;
+ riscv64)	_libitm=false ;;
+ loongarch64)	_libitm=false ;;
+ esac
++# Ada is not needed for the riscv32 base system; keep the first bootstrap small
++case "$CTARGET_ARCH" in
++riscv32)	LANG_ADA=false ;;
++esac
+ 
+ # Internal libffi fails to build on MIPS at the moment, need to
+ # investigate further.  We disable LANG_GO on mips64 as it requires
+@@ -304,6 +309,7 @@ build() {
+ 	i586-*-*-*)		_arch_configure="--with-arch=pentium-m --with-fpmath=sse --with-tune=generic --enable-cld";;
+ 	s390x-*-*-*)		_arch_configure="--with-arch=z196 --with-tune=zEC12 --with-zarch --with-long-double-128 --enable-decimal-float";;
+ 	riscv64-*-*-*)		_arch_configure="--with-arch=rv64gc --with-abi=lp64d --enable-autolink-libatomic";;
++	riscv32-*-*-*)		_arch_configure="--with-arch=rv32imac_zicsr_zifencei --with-abi=ilp32 --enable-autolink-libatomic";;
+ 	loongarch64-*-*-*)	_arch_configure="--with-arch=la64v1.0 --with-abi=lp64d";;
+ 	esac
+ 
+-- 
+2.43.0
+

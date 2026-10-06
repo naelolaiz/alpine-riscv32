@@ -1,0 +1,35 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: naelolaiz <1333555+naelolaiz@users.noreply.github.com>
+Date: Tue, 6 Oct 2026 22:58:52 +0000
+Subject: [PATCH 1/5] scripts/bootstrap.sh: copy keys from ABUILD_USERDIR,
+ riscv32 needs libatomic
+
+---
+ scripts/bootstrap.sh | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/scripts/bootstrap.sh b/scripts/bootstrap.sh
+index a9b4ec86..3bd2b4a3 100755
+--- a/scripts/bootstrap.sh
++++ b/scripts/bootstrap.sh
+@@ -90,7 +90,7 @@ if [ ! -d "$CBUILDROOT" ]; then
+ 	# 2) the apk database is not initialized the sysroot
+ 	# Thus it's unusable at that point and needs to be deleted manually.
+ 	cp -a /etc/apk/keys/* "$CBUILDROOT/etc/apk/keys"
+-	cp -a ~/.abuild/*.pub "$CBUILDROOT/etc/apk/keys"
++	cp -a "$ABUILD_USERDIR"/*.pub "$CBUILDROOT/etc/apk/keys"
+ 	if [ "$BOOTSTRAP_USR_MERGED" = "1" ]; then
+ 		mkdir -p "$CBUILDROOT"/usr/lib "$CBUILDROOT"/usr/bin "$CBUILDROOT"/usr/sbin
+ 		ln -s usr/bin usr/sbin usr/lib "$CBUILDROOT"/
+@@ -139,7 +139,7 @@ export EXTRADEPENDS_TARGET="libgcc libstdc++ musl-dev"
+ # https://github.com/riscv/riscv-gnu-toolchain/issues/183#issuecomment-253721765
+ # The reason gcc itself is needed is because .so is in that package,
+ # not in libatomic.
+-if [ "$CTARGET_ARCH" = "riscv64" ]; then
++if [ "$CTARGET_ARCH" = "riscv64" ] || [ "$CTARGET_ARCH" = "riscv32" ]; then
+ 	NEEDS_LIBATOMIC="yes"
+ fi
+ 
+-- 
+2.43.0
+

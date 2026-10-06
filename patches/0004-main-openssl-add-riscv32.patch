@@ -1,0 +1,24 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: naelolaiz <1333555+naelolaiz@users.noreply.github.com>
+Date: Tue, 6 Oct 2026 22:58:53 +0000
+Subject: [PATCH 4/5] main/openssl: add riscv32
+
+---
+ main/openssl/APKBUILD | 1 +
+ 1 file changed, 1 insertion(+)
+
+diff --git a/main/openssl/APKBUILD b/main/openssl/APKBUILD
+index 88445629..598e3e1b 100644
+--- a/main/openssl/APKBUILD
++++ b/main/openssl/APKBUILD
+@@ -203,6 +203,7 @@ build() {
+ 		x86)		target="linux-elf" ;;
+ 		x86_64)		target="linux-x86_64"; optflags="enable-ec_nistp_64_gcc_128" ;;
+ 		s390x)		target="linux64-s390x";;
++		riscv32)	target="linux32-riscv32";;
+ 		riscv64)	target="linux64-riscv64";;
+ 		loongarch64)	target="linux64-loongarch64";;
+ 		*)		msg "Unable to determine architecture from (CARCH=$CARCH)" ; return 1 ;;
+-- 
+2.43.0
+

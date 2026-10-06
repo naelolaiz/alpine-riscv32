@@ -1,0 +1,25 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: naelolaiz <1333555+naelolaiz@users.noreply.github.com>
+Date: Tue, 6 Oct 2026 22:58:53 +0000
+Subject: [PATCH 5/5] main/binutils: no gold on riscv32
+
+---
+ main/binutils/APKBUILD | 2 +-
+ 1 file changed, 1 insertion(+), 1 deletion(-)
+
+diff --git a/main/binutils/APKBUILD b/main/binutils/APKBUILD
+index 59b9bcf6..ad3256d5 100644
+--- a/main/binutils/APKBUILD
++++ b/main/binutils/APKBUILD
+@@ -55,7 +55,7 @@ if [ "$CHOST" != "$CTARGET" ]; then
+ fi
+ 
+ _gold_configure="--disable-gold"
+-if [ "$CHOST" = "$CBUILD" ] && [ "$CBUILD" = "$CTARGET" ] && [ "$CTARGET_ARCH" != "riscv64" ] && [ "$CTARGET_ARCH" != "loongarch64" ]; then
++if [ "$CHOST" = "$CBUILD" ] && [ "$CBUILD" = "$CTARGET" ] && [ "$CTARGET_ARCH" != "riscv64" ] && [ "$CTARGET_ARCH" != "riscv32" ] && [ "$CTARGET_ARCH" != "loongarch64" ]; then
+ 	subpackages="$subpackages $pkgname-gold"
+ 	_gold_configure="--enable-gold"
+ fi
+-- 
+2.43.0
+
