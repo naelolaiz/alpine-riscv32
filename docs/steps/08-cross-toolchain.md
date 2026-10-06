@@ -39,19 +39,26 @@ Packages land in abuild's `REPODEST`, by default `~/.local/share/abuild`
 downloaded to `/var/cache/distfiles` in the container. With no `PKG`, step 3 is the whole base system list; this step limits it
 to the first three.
 
-## 2. Source mirror
+## 2. Sources on the host
 
 HOST, in the directory holding `aports`:
 
 ```sh
-echo 'DISTFILES_MIRROR=https://distfiles.alpinelinux.org/distfiles/edge' >> .config/abuild/abuild.conf
+echo 'SRCDEST=/work/.cache/distfiles' >> .config/abuild/abuild.conf
+mkdir -p .cache/distfiles
+curl -fL -o .cache/distfiles/binutils-2.45.1.tar.xz https://mirrors.kernel.org/gnu/binutils/binutils-2.45.1.tar.xz
+curl -fL -o .cache/distfiles/binutils-with-gold-2.44.tar.xz https://mirrors.kernel.org/gnu/binutils/binutils-with-gold-2.44.tar.xz
 ```
 
-`ftp.gnu.org` often refuses connections when overloaded. With
-`DISTFILES_MIRROR` set, abuild first tries `<mirror>/<file name>`, then the
-original URL. Alpine's builders keep every source they fetched there under its
-file name. The `sha512sums` in each APKBUILD are still checked, so a mirror
-cannot substitute a different file.
+- `SRCDEST` is where abuild keeps downloaded sources. A file already there is
+  not downloaded again, only checked against the APKBUILD's `sha512sums`. On
+  the host it also survives recreating the container.
+- `ftp.gnu.org`, binutils' source URL, often refuses connections.
+  `mirrors.kernel.org/gnu` is an official GNU mirror with the same files; a
+  different file would fail the checksum. gcc comes from `gcc.gnu.org`, a
+  different server.
+- Alpine's distfiles mirror (`DISTFILES_MIRROR`) did not have
+  `binutils-2.45.1.tar.xz` (404), so it is not used.
 
 ## 3. Run it
 
