@@ -53,6 +53,13 @@ signing key in `$HOME/.config/abuild` and puts built packages in
 `$HOME/packages`; both end up on the host, next to the repositories, and
 survive removing the container.
 
+Enter the container by user **name** (`-u $(id -un)`), every time. Under
+`keep-id` the container's default user is the number `1000:1000`; with a
+numeric user the runtime does not read `/etc/group`, so the `abuild` group
+recorded by `addgroup` is not applied. With a name, podman looks the user up
+and adds its groups. Check: `podman exec -u $(id -un) alpine-rv32 id` lists
+`300(abuild)`, plain `podman exec alpine-rv32 id` does not.
+
 ## 4. Signing key
 
 Enter the container. Commands after this line run inside it; type them at its
@@ -60,7 +67,7 @@ prompt rather than pasting them together with the `podman exec` line, or the
 terminal hands them to the host shell once the container shell exits.
 
 ```sh
-podman exec -it alpine-rv32 sh
+podman exec -it -u $(id -un) alpine-rv32 sh
 ```
 
 Inside:
@@ -85,7 +92,7 @@ the container it starts with `-`, which is harmless.
 ## 5. Check
 
 ```sh
-podman exec -it alpine-rv32 sh
+podman exec -it -u $(id -un) alpine-rv32 sh
 ```
 
 Inside:

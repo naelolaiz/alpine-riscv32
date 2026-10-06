@@ -22,7 +22,7 @@ Patches live here as a series against a pinned
 full aports fork, so the delta stays small and reviewable:
 
 - [`aports.commit`](aports.commit): the aports commit the series applies to (master, 2026-10-06).
-- [`docs/steps/`](docs/steps/): how to set up the build environment and apply the edits by hand.
+- [`docs/steps/`](docs/steps/): how to set up the build environment and make the edits by hand.
 - `patches/`: `git format-patch` output, one fix per patch, numbered in apply order.
 - `scripts/`: apply the series to a fresh aports checkout and run
   `scripts/bootstrap.sh riscv32` in an Alpine edge container.
