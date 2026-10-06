@@ -8,3 +8,5 @@ sysroot-*/
 *.log
 *.rsa
 *.rsa.pub
+.ash_history
+.*.swp
