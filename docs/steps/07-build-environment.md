@@ -10,6 +10,8 @@ All host commands run from the directory that holds this repository and
 
 ## 1. Get aports at the pinned commit
 
+HOST:
+
 ```sh
 git clone --filter=blob:none https://gitlab.alpinelinux.org/alpine/aports.git
 git -C aports switch -c riscv32 $(cat alpine-riscv32/aports.commit)
@@ -22,6 +24,8 @@ git -C aports switch -c riscv32 $(cat alpine-riscv32/aports.commit)
   The `riscv32` branch is where the edits of part 2 go.
 
 ## 2. Start the container
+
+HOST:
 
 ```sh
 podman run -d --name alpine-rv32 --userns=keep-id -v "$PWD":/work:Z -w /work docker.io/library/alpine:edge sleep infinity
@@ -37,6 +41,8 @@ podman run -d --name alpine-rv32 --userns=keep-id -v "$PWD":/work:Z -w /work doc
   are seen inside. `:Z` relabels it for SELinux and is ignored without it.
 
 ## 3. Install the build tools (as root in the container)
+
+HOST (each line runs one command in the container and returns):
 
 ```sh
 podman exec -u root alpine-rv32 apk add alpine-sdk
@@ -70,14 +76,14 @@ terminal hands them to the host shell once the container shell exits.
 podman exec -it -u $(id -un) alpine-rv32 sh
 ```
 
-Inside:
+CONTAINER, at its prompt:
 
 ```sh
 abuild-keygen -a -n
 exit
 ```
 
-Back on the host, trust the public key in the container:
+HOST, trust the public key in the container:
 
 ```sh
 podman exec -u root alpine-rv32 sh -c 'cp /work/.config/abuild/*.rsa.pub /etc/apk/keys/'
@@ -95,7 +101,7 @@ the container it starts with `-`, which is harmless.
 podman exec -it -u $(id -un) alpine-rv32 sh
 ```
 
-Inside:
+CONTAINER, at its prompt:
 
 ```sh
 echo $HOME

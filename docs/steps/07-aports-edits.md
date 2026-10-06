@@ -1,5 +1,9 @@
 # Step 7, part 2: the riscv32 edits to aports
 
+**Everything in part 2 runs on the HOST**, in the directory that holds
+`aports`, `alpine-riscv32` and `esp32s31-alpine` (the one mounted at `/work`).
+Nothing runs in the container until step 8.
+
 Edits to the aports checkout from part 1 (branch `riscv32`, at the commit in
 [`aports.commit`](../../aports.commit)), made by hand on the host with any
 editor; the container sees them through `/work`. Line numbers are for that
@@ -8,16 +12,18 @@ reviewed or upstreamed one by one.
 
 Versions at this commit: gcc 15.2.0, musl 1.2.6, binutils 2.45.1, openssl 3.5.9.
 
-## 0. A neutral git identity for aports
+## 0. A git identity for aports
+
+HOST:
 
 ```sh
-git -C aports config user.name "alpine-riscv32"
-git -C aports config user.email "alpine-riscv32@users.noreply.github.com"
+git -C aports config user.name "naelolaiz"
+git -C aports config user.email "1333555+naelolaiz@users.noreply.github.com"
 ```
 
 The commits become patch files in this repository, and a patch carries its
-author's name and e-mail. A repository-local identity keeps personal details
-out of it; set the real one when submitting upstream.
+author's name and e-mail. GitHub's no-reply address links the patches to the
+GitHub account without publishing a private e-mail address.
 
 ## 1. bootstrap.sh: the key directory (generic fix)
 
@@ -163,14 +169,14 @@ Commit: `main/binutils: no gold on riscv32`
 
 ## 7. Commit and export
 
-After each edit, from the directory holding `aports`:
+After each edit, HOST, from the directory holding `aports`:
 
 ```sh
 git -C aports diff
 git -C aports commit -am "<the commit message given above>"
 ```
 
-When all six are in:
+When all six are in, HOST, same directory:
 
 ```sh
 git -C aports log --oneline $(cat alpine-riscv32/aports.commit)..
