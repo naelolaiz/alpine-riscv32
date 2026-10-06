@@ -71,14 +71,11 @@ ls /work/packages/main/riscv32/
 
 ## 4. Hello world under qemu-user
 
-CONTAINER, at its prompt:
+HOST (installing needs root in the container):
 
 ```sh
-doas apk add qemu-riscv32 file 2>/dev/null || true
+podman exec -u root alpine-rv32 apk add qemu-riscv32 file
 ```
-
-Installing needs root; if `doas` is not set up, run on the HOST instead:
-`podman exec -u root alpine-rv32 apk add qemu-riscv32 file`.
 
 Then CONTAINER:
 
