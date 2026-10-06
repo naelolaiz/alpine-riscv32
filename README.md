@@ -1,0 +1,38 @@
+# alpine-riscv32
+
+Generic Alpine Linux support for 32-bit RISC-V (`riscv32`, `ilp32` soft-float,
+musl). Nothing here is specific to a board; the first target is the ESP32-S31
+in the sibling `esp32s31-alpine` repository, but the
+result should also run on QEMU, LiteX or any other RV32 Linux system.
+
+## Target
+
+| | |
+| --- | --- |
+| Arch name | `riscv32` |
+| Triplet | `riscv32-alpine-linux-musl` |
+| ISA / ABI | `rv32imac` / `ilp32` (soft-float) |
+| libc | musl (riscv32 upstream since 1.2.5), time64 |
+| Loader | `/lib/ld-musl-riscv32.so.1` |
+
+## Approach
+
+Patches live here as a series against a pinned
+[aports](https://gitlab.alpinelinux.org/alpine/aports) commit rather than as a
+full aports fork, so the delta stays small and reviewable:
+
+- `aports.commit`: the aports commit the series applies to (set in step 7).
+- `patches/`: `git format-patch` output, one fix per patch, numbered in apply order.
+- `scripts/`: apply the series to a fresh aports checkout and run
+  `scripts/bootstrap.sh riscv32` in an Alpine edge container.
+- [`RISCV32.md`](RISCV32.md): package status table.
+- `docs/`: the `riscv64` audit and notes per package.
+
+When the series is ready to upstream, it is applied to an aports branch and
+submitted to Alpine, coordinating in #alpine-ports.
+
+## Already supported upstream
+
+abuild maps `riscv32` to `riscv32-alpine-linux-musl`, and apk-tools reports
+`riscv32` when built for rv32. The work is in the APKBUILDs (gcc, musl,
+openssl, binutils) and `scripts/bootstrap.sh`.
