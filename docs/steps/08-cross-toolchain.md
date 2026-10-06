@@ -75,32 +75,48 @@ most of the time. Re-running is safe: abuild skips packages that are already
 built and up to date. If it stops, the last 50 lines of the log say where:
 `tail -n 50 /work/bootstrap-step8.log`.
 
-## 4. Check the compiler
+## 4. Install what was built
+
+abuild removes a package's build dependencies when it finishes, so after the
+bootstrap neither the cross compiler (in the container) nor musl (in the
+sysroot) is installed. Install them from the local repository.
 
 CONTAINER, at its prompt:
 
 ```sh
-riscv32-alpine-linux-musl-gcc -v 2>&1 | tail -n 2
-riscv32-alpine-linux-musl-gcc -print-multi-os-directory
-riscv32-alpine-linux-musl-gcc -print-search-dirs | grep '^libraries'
-ls /work/.local/share/abuild/main/riscv32/
+abuild-apk add --repository /work/.local/share/abuild/main gcc-riscv32 binutils-riscv32 qemu-riscv32 file
+abuild-apk add --root /work/sysroot-riscv32 --arch riscv32 --repository /work/.local/share/abuild/main musl-dev libgcc
 ```
 
-- `-v`: the configure line must contain `--with-arch=rv32imac_zicsr_zifencei
-  --with-abi=ilp32`.
-- `-print-multi-os-directory` must print `.` or `../lib`, and the library
-  search path must not contain `lib32/ilp32`: that is gcc patch 0024
-  (multilib disabled) working for rv32 too.
+- `abuild-apk` runs apk as root for members of the `abuild` group.
+  `--repository` is the local repository; apk appends the arch directory.
+- The second line installs riscv32 packages into the sysroot, where the cross
+  gcc looks for headers and libraries (`--with-sysroot`).
 
-## 5. Hello world under qemu-user
+Expected packages after step 8: in `main/x86_64`, binutils-riscv32,
+gcc-pass2-riscv32, gcc-riscv32, g++-riscv32, libgcc-static-riscv32,
+libstdc++-dev-riscv32, build-base-riscv32; in `main/riscv32`, musl (and -dev,
+-utils, -libintl, -dbg), libgcc, libstdc++, libucontext (and -dev),
+linux-headers, fortify-headers.
 
-HOST (installing needs root in the container):
+## 5. Check the compiler
+
+CONTAINER, at its prompt:
 
 ```sh
-podman exec -u root alpine-rv32 apk add qemu-riscv32 file
+riscv32-alpine-linux-musl-gcc -v 2>&1 | grep -o -e '--with-arch=[^ ]*' -e '--with-abi=[^ ]*' -e '--with-sysroot=[^ ]*'
+riscv32-alpine-linux-musl-gcc -print-multi-os-directory
+riscv32-alpine-linux-musl-gcc -print-search-dirs | grep '^libraries'
 ```
 
-Then CONTAINER:
+- `--with-arch=rv32imac_zicsr_zifencei`, `--with-abi=ilp32`, and the sysroot.
+- `-print-multi-os-directory` must print `.` or `../lib`, and the library
+  search path must not contain `lib32/ilp32`: gcc patch 0024 (multilib
+  disabled) working for rv32 too.
+
+## 6. Hello world under qemu-user
+
+CONTAINER, at its prompt:
 
 ```sh
 cd /work
