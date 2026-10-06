@@ -57,8 +57,8 @@ podman exec -u root alpine-rv32 addgroup $(id -un) abuild
 
 With `keep-id`, podman adds your user to the container's `/etc/passwd` with the
 working directory as home, so `HOME` is `/work` inside. abuild keeps its
-signing key in `$HOME/.config/abuild` and puts built packages in
-`$HOME/packages`; both end up on the host, next to the repositories, and
+signing key and settings in `$HOME/.config/abuild` and puts built packages in
+`$HOME/.local/share/abuild`; both end up on the host, next to the repositories, and
 survive removing the container.
 
 Enter the container by user **name** (`-u $(id -un)`), every time. Under

@@ -34,11 +34,26 @@ with `"$ABUILD_USERDIR"/*.pub` in quotes. The same series is in
 3. Cross-builds each `PKG` for riscv32 (`BOOTSTRAP=bootimage`) and installs
    it into the sysroot, so later packages can link against it.
 
-Packages land in `$HOME/packages` (here `/work/packages`), signed with your
-key. With no `PKG`, step 3 is the whole base system list; this step limits it
+Packages land in abuild's `REPODEST`, by default `~/.local/share/abuild`
+(here `/work/.local/share/abuild`), signed with your key. Sources are
+downloaded to `/var/cache/distfiles` in the container. With no `PKG`, step 3 is the whole base system list; this step limits it
 to the first three.
 
-## 2. Run it
+## 2. Source mirror
+
+HOST, in the directory holding `aports`:
+
+```sh
+echo 'DISTFILES_MIRROR=https://distfiles.alpinelinux.org/distfiles/edge' >> .config/abuild/abuild.conf
+```
+
+`ftp.gnu.org` often refuses connections when overloaded. With
+`DISTFILES_MIRROR` set, abuild first tries `<mirror>/<file name>`, then the
+original URL. Alpine's builders keep every source they fetched there under its
+file name. The `sha512sums` in each APKBUILD are still checked, so a mirror
+cannot substitute a different file.
+
+## 3. Run it
 
 CONTAINER, entered with `podman exec -it -u $(id -un) alpine-rv32 sh`, at its
 prompt:
@@ -49,10 +64,11 @@ cd /work/aports
 ```
 
 `tee` keeps a full log on the host as well. binutils and two gcc builds take
-most of the time. If it stops, the last 50 lines of the log say where:
+most of the time. Re-running is safe: abuild skips packages that are already
+built and up to date. If it stops, the last 50 lines of the log say where:
 `tail -n 50 /work/bootstrap-step8.log`.
 
-## 3. Check the compiler
+## 4. Check the compiler
 
 CONTAINER, at its prompt:
 
@@ -60,7 +76,7 @@ CONTAINER, at its prompt:
 riscv32-alpine-linux-musl-gcc -v 2>&1 | tail -n 2
 riscv32-alpine-linux-musl-gcc -print-multi-os-directory
 riscv32-alpine-linux-musl-gcc -print-search-dirs | grep '^libraries'
-ls /work/packages/main/riscv32/
+ls /work/.local/share/abuild/main/riscv32/
 ```
 
 - `-v`: the configure line must contain `--with-arch=rv32imac_zicsr_zifencei
@@ -69,7 +85,7 @@ ls /work/packages/main/riscv32/
   search path must not contain `lib32/ilp32`: that is gcc patch 0024
   (multilib disabled) working for rv32 too.
 
-## 4. Hello world under qemu-user
+## 5. Hello world under qemu-user
 
 HOST (installing needs root in the container):
 
