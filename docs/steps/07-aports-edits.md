@@ -9,7 +9,7 @@ Edits to the aports checkout from part 1 (branch `riscv32`, at the commit in
 editor; the container sees them through `/work`. Line numbers are for that
 commit. Indentation in these files is tabs; keep it. Inside one file, edit
 from the bottom up, because inserted lines shift the line numbers below them.
-Each fix is one commit, so the series can be exported as patches and
+Each file is one commit, so the series can be exported as patches and
 reviewed or upstreamed one by one.
 
 Versions at this commit: gcc 15.2.0, musl 1.2.6, binutils 2.45.1, openssl 3.5.9.
@@ -41,8 +41,6 @@ that exists) and exports the choice as `ABUILD_USERDIR` from `functions.sh`,
 which the script sources earlier. With a fresh key the old path matches
 nothing, `cp` fails and `set -e` stops the bootstrap before anything is built.
 
-Commit: `scripts/bootstrap.sh: copy keys from ABUILD_USERDIR`
-
 ## 2. bootstrap.sh: libatomic for riscv32
 
 Line 142:
@@ -58,7 +56,7 @@ call into libatomic, which lives in the gcc package. This makes the
 cross-built target gcc an implicit dependency of every later package, so
 libatomic is in the sysroot when they link.
 
-Commit: `scripts/bootstrap.sh: riscv32 needs libatomic`
+Commit (both bootstrap.sh fixes together): `scripts/bootstrap.sh: copy keys from ABUILD_USERDIR, riscv32 needs libatomic`
 
 ## 3. gcc: CPU, ABI and unsupported runtimes
 
@@ -171,22 +169,30 @@ Commit: `main/binutils: no gold on riscv32`
 
 ## 7. Commit and export
 
-After each edit, HOST, from the directory holding `aports`:
+HOST, in the directory holding `aports`. One commit per file;
+`git commit -m "..." <file>` commits only that file, and with `-C aports` the
+path is relative to `aports`:
 
 ```sh
-git -C aports diff
-git -C aports commit -am "<the commit message given above>"
+git -C aports status --short
+git -C aports commit -m "scripts/bootstrap.sh: copy keys from ABUILD_USERDIR, riscv32 needs libatomic" scripts/bootstrap.sh
+git -C aports commit -m "main/gcc: add riscv32" main/gcc/APKBUILD
+git -C aports commit -m "main/musl: add riscv32" main/musl/APKBUILD
+git -C aports commit -m "main/openssl: add riscv32" main/openssl/APKBUILD
+git -C aports commit -m "main/binutils: no gold on riscv32" main/binutils/APKBUILD
+git -C aports log --oneline $(cat alpine-riscv32/aports.commit)..
 ```
 
-When all six are in, HOST, same directory:
+`status --short` must list exactly those five files as modified.
+
+Export the series, HOST, same directory:
 
 ```sh
-git -C aports log --oneline $(cat alpine-riscv32/aports.commit)..
 git -C aports format-patch -o ../alpine-riscv32/patches $(cat alpine-riscv32/aports.commit)..
 ```
 
 `format-patch` writes one numbered file per commit; `git am` on a fresh
 checkout of the pinned commit re-creates the branch.
 
-Done when: six commits on `riscv32`, exported to `patches/`.
+Done when: five commits on `riscv32`, exported to `patches/`.
 Next: step 8, `scripts/bootstrap.sh riscv32` up to the cross gcc and musl.
