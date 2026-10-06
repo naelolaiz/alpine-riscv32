@@ -1,0 +1,10 @@
+# Build-environment files that must never be committed: abuild keys and
+# settings, built packages, sysroots, logs (they belong one level up, next
+# to the aports checkout, but guard against a mount from the wrong directory)
+.config/
+.abuild/
+packages/
+sysroot-*/
+*.log
+*.rsa
+*.rsa.pub

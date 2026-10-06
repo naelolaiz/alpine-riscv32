@@ -25,7 +25,9 @@ git -C aports switch -c riscv32 $(cat alpine-riscv32/aports.commit)
 
 ## 2. Start the container
 
-HOST:
+HOST, and it must be the directory holding `aports` and both repositories:
+`-v "$PWD":/work` mounts the current directory, so starting it anywhere else
+hides `aports` and puts the signing key inside whatever directory that is.
 
 ```sh
 podman run -d --name alpine-rv32 --userns=keep-id -v "$PWD":/work:Z -w /work docker.io/library/alpine:edge sleep infinity
