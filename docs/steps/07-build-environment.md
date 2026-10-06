@@ -41,47 +41,78 @@ podman run -d --name alpine-rv32 --userns=keep-id -v "$PWD":/work:Z -w /work doc
 ```sh
 podman exec -u root alpine-rv32 apk add alpine-sdk
 podman exec -u root alpine-rv32 addgroup $(id -un) abuild
-podman exec -u root alpine-rv32 sh -c "mkdir -p $HOME && chown $(id -u):$(id -g) $HOME"
 ```
 
 - `alpine-sdk` pulls in abuild, build-base (gcc, make, musl-dev) and git.
 - Members of the `abuild` group may install build dependencies through
   `abuild-apk` without being root.
-- `keep-id` adds your user to the container's `/etc/passwd` with your host home
-  path, but the directory does not exist in the image. abuild keeps its signing
-  key and settings in `~/.abuild`, so it must.
 
-## 4. Enter and check
+With `keep-id`, podman adds your user to the container's `/etc/passwd` with the
+working directory as home, so `HOME` is `/work` inside. abuild keeps its
+signing key in `$HOME/.config/abuild` and puts built packages in
+`$HOME/packages`; both end up on the host, next to the repositories, and
+survive removing the container.
+
+## 4. Signing key
+
+Enter the container. Commands after this line run inside it; type them at its
+prompt rather than pasting them together with the `podman exec` line, or the
+terminal hands them to the host shell once the container shell exits.
 
 ```sh
 podman exec -it alpine-rv32 sh
 ```
 
-Inside the container:
-
-```sh
-id
-abuild -V
-CTARGET=riscv32 sh -c '. /usr/share/abuild/functions.sh; echo "$CTARGET_ARCH $CTARGET $CBUILDROOT"'
-```
-
-- `id` must list the `abuild` group.
-- The last line asks abuild what it derives from the arch name: the triplet
-  `riscv32-alpine-linux-musl` and the sysroot where cross-built packages land.
-  This is what "abuild already knows riscv32" means in practice.
-
-## 5. Signing key
+Inside:
 
 ```sh
 abuild-keygen -a -n
 exit
-podman exec -u root alpine-rv32 sh -c "cp $HOME/.abuild/*.rsa.pub /etc/apk/keys/"
 ```
 
-Every package abuild builds is signed. apk installs only packages signed by a
-key in `/etc/apk/keys`, so the public key goes there; `bootstrap.sh` also
-copies it into the riscv32 sysroot. `-a` writes the key name into
-`~/.abuild/abuild.conf`, `-n` skips the passphrase.
+Back on the host, trust the public key in the container:
 
-Done when: `id` shows `abuild`, and abuild prints the riscv32 triplet.
-Next: part 2, the riscv32 edits to gcc, musl, openssl, binutils and bootstrap.sh.
+```sh
+podman exec -u root alpine-rv32 sh -c 'cp /work/.config/abuild/*.rsa.pub /etc/apk/keys/'
+```
+
+Every package abuild builds is signed, and apk installs only packages signed
+by a key in `/etc/apk/keys`. `-a` writes the key name into
+`.config/abuild/abuild.conf`, `-n` skips the passphrase. The key name starts
+with `PACKAGER`'s e-mail, git's `user.email` or `$USER`; with none set inside
+the container it starts with `-`, which is harmless.
+
+## 5. Check
+
+```sh
+podman exec -it alpine-rv32 sh
+```
+
+Inside:
+
+```sh
+echo $HOME
+id
+abuild -V
+ls /etc/apk/keys
+CTARGET=riscv32 sh -c '. /usr/share/abuild/functions.sh; echo "$CTARGET_ARCH $CTARGET $CBUILDROOT"'
+```
+
+- `id` must list the `abuild` group.
+- `/etc/apk/keys` must contain your key next to Alpine's.
+- The last line asks abuild what it derives from the arch name: the triplet
+  `riscv32-alpine-linux-musl` and the sysroot where cross-built packages land.
+  This is what "abuild already knows riscv32" means in practice.
+
+## Found here: bootstrap.sh looks for the key in the old place
+
+abuild moved its user directory from `~/.abuild` to `~/.config/abuild` (it
+still uses `~/.abuild` if only that exists; `functions.sh` sets
+`ABUILD_USERDIR`). `scripts/bootstrap.sh` still runs
+`cp -a ~/.abuild/*.pub "$CBUILDROOT/etc/apk/keys"`, which fails with a fresh
+key, and the script stops there (`set -e`). The fix is part of part 2:
+use `"$ABUILD_USERDIR"/*.pub`. It is generic, not riscv32-specific.
+
+Done when: `id` shows `abuild`, the key is in `/etc/apk/keys`, and abuild
+prints the riscv32 triplet.
+Next: part 2, the edits to gcc, musl, openssl, binutils and bootstrap.sh.
