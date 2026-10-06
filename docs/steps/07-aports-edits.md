@@ -7,7 +7,9 @@ Nothing runs in the container until step 8.
 Edits to the aports checkout from part 1 (branch `riscv32`, at the commit in
 [`aports.commit`](../../aports.commit)), made by hand on the host with any
 editor; the container sees them through `/work`. Line numbers are for that
-commit. Each fix is one commit, so the series can be exported as patches and
+commit. Indentation in these files is tabs; keep it. Inside one file, edit
+from the bottom up, because inserted lines shift the line numbers below them.
+Each fix is one commit, so the series can be exported as patches and
 reviewed or upstreamed one by one.
 
 Versions at this commit: gcc 15.2.0, musl 1.2.6, binutils 2.45.1, openssl 3.5.9.
