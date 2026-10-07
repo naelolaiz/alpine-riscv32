@@ -35,6 +35,20 @@ curl -fL --connect-timeout 20 -o .cache/distfiles/acl-2.3.2.tar.gz https://downl
 If a fetch hangs anyway, Ctrl-C in the container stops it, and a rerun resumes
 at that package.
 
+fakeroot downloads a GitLab "archive" tarball from salsa.debian.org, which
+GitLab builds on request. In step 9 its bytes no longer matched the APKBUILD's
+sha512 (abuild renamed it to `fakeroot-upstream-1.37.2.tar.gz.bba207ae`; the
+suffix is the first 8 characters of the expected sum). Alpine's build servers
+keep the exact file they checksummed, and that copy matches. HOST, same
+directory:
+
+```sh
+curl -fL --connect-timeout 20 -o .cache/distfiles/fakeroot-upstream-1.37.2.tar.gz https://distfiles.alpinelinux.org/distfiles/edge/fakeroot-upstream-1.37.2.tar.gz
+sha512sum .cache/distfiles/fakeroot-upstream-1.37.2.tar.gz
+```
+
+The sum starts with `bba207ae`.
+
 ## 2. Run it
 
 CONTAINER, entered with `podman exec -it -u $(id -un) alpine-rv32 sh`, at its
@@ -169,6 +183,35 @@ ls /work/.local/share/abuild/main/riscv32/ | wc -l
 ls /work/.local/share/abuild/main/riscv32/ | grep -E '^(busybox|apk-tools|openrc|alpine-base)-'
 ```
 
-Done when: the bootstrap ends without an error and busybox, apk-tools, openrc
-and alpine-base are in the riscv32 repository.
+## 4. Run busybox and apk under qemu-user
+
+apk has to create files owned by root and other system users, so this runs as
+root in the container. HOST:
+
+```sh
+podman exec -it -u root alpine-rv32 sh
+```
+
+CONTAINER as root. The tree goes in `/var/tmp`, not `/work`: files that
+container root creates in `/work` show up on the host owned by a subordinate
+uid the host user cannot delete normally. In the commands below:
+
+- `--initdb` creates an empty apk database there, and `--arch riscv32` makes
+  apk pick riscv32 packages.
+- The key copy lets apk trust the locally signed index.
+- `--no-scripts` skips the packages' install scripts, which are riscv32
+  programs this check does not need.
+- `-L` tells qemu where the riscv32 loader and libraries live.
+
+```sh
+mkdir -p /var/tmp/rootfs-riscv32/etc/apk/keys
+cp /work/.config/abuild/*.rsa.pub /var/tmp/rootfs-riscv32/etc/apk/keys/
+apk add --root /var/tmp/rootfs-riscv32 --initdb --arch riscv32 --repository /work/.local/share/abuild/main --no-scripts alpine-base
+qemu-riscv32 -L /var/tmp/rootfs-riscv32 /var/tmp/rootfs-riscv32/bin/busybox uname -m
+qemu-riscv32 -L /var/tmp/rootfs-riscv32 /var/tmp/rootfs-riscv32/sbin/apk --version
+```
+
+Done when: the bootstrap ends without an error; busybox, apk-tools, openrc and
+alpine-base are in the riscv32 repository; and busybox and apk run under
+qemu-riscv32.
 Next: step 10, boot them in a full-system QEMU.
