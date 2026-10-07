@@ -144,6 +144,13 @@ ls -l /var/tmp/alpine-rv32-root/sbin/init
 `/sbin/init` is a link to `/bin/busybox` that busybox's install script
 created; if it is missing, the scripts did not run.
 
+Expected warning: `busybox-1.38.0-r7: failed to create initial device nodes:
+Operation not permitted`. Before running scripts, apk tries to create
+`/dev/null`, `/dev/zero`, `/dev/random`, `/dev/urandom` and `/dev/console` in
+the tree, and a rootless container may not create device nodes. It does not
+matter for the boot: the kernel mounts devtmpfs over `/dev`
+(`CONFIG_DEVTMPFS_MOUNT=y`).
+
 Then the settings a boot needs, still CONTAINER as root:
 
 1. A login prompt on the serial console. QEMU's `-nographic` shows only the
