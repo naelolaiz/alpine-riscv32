@@ -183,7 +183,28 @@ ls /work/.local/share/abuild/main/riscv32/ | wc -l
 ls /work/.local/share/abuild/main/riscv32/ | grep -E '^(busybox|apk-tools|openrc|alpine-base)-'
 ```
 
-## 4. Run busybox and apk under qemu-user
+## 4. mdev-conf, which bootstrap.sh does not build
+
+alpine-base depends on busybox-mdev-openrc (the service that starts busybox's
+device manager, mdev), which depends on mdev-conf (mdev's rules). mdev-conf is
+its own aport and is missing from bootstrap.sh's list, so installing
+alpine-base stops with `mdev-conf (no such package)`. bootstrap.sh builds only
+the packages named after the arch, with the same cross settings. CONTAINER, as
+your user (abuild refuses root):
+
+```sh
+cd /work/aports
+./scripts/bootstrap.sh riscv32 mdev-conf 2>&1 | tee /work/bootstrap-mdev-conf.log
+```
+
+Its source is a GitLab archive like fakeroot's. If its checksum fails the same
+way, fetch Alpine's copy (HOST, in the directory holding `aports`):
+
+```sh
+curl -fL --connect-timeout 20 -o .cache/distfiles/mdev-conf-4.10.tar.gz https://distfiles.alpinelinux.org/distfiles/edge/mdev-conf-4.10.tar.gz
+```
+
+## 5. Run busybox and apk under qemu-user
 
 apk has to create files owned by root and other system users, so this runs as
 root in the container. HOST:

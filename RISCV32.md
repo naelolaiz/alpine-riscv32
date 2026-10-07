@@ -16,4 +16,4 @@ Failure classes: Alpine, upstream package, RV32, toolchain, kernel, board, memor
 | alpine-base | built (step 9) | | 3.25.0_alpha20260805-r0, no change needed |
 | libucontext | built (step 8) | | 1.5.2-r0, no change needed |
 | everything else in bootstrap.sh's list (zlib, pkgconf, gmp, mpfr4, mpc1, isl26, zstd, make, file, patch, build-base, ca-certificates, libmd, bsd-compat-headers, libbsd, libcap, alpine-conf, alpine-keys, attr, acl, fakeroot, tar, pax-utils, lzip, abuild) | built (step 9) | | no change needed; after step 9 the riscv32 repository holds 156 files |
-| bootstrap.sh | patched (0001) | Alpine | key path from `ABUILD_USERDIR` (generic bug); libatomic dependency for riscv32 |
+| bootstrap.sh | patched (0001) | Alpine | key path from `ABUILD_USERDIR` (generic bug); libatomic dependency for riscv32; its default list lacks mdev-conf, which alpine-base needs (generic gap, built by hand in step 9) |
