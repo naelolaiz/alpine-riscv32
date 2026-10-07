@@ -1,0 +1,75 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: naelolaiz <1333555+naelolaiz@users.noreply.github.com>
+Date: Wed, 7 Oct 2026 23:27:51 +0000
+Subject: [PATCH 09/10] main/glib: no man pages and DocBook tools when
+ bootstrapping
+
+With BOOTSTRAP or APORTS_BOOTSTRAP set, build glib with
+-Dman-pages=disabled and without py3-docutils (rst2man), docbook-xml,
+docbook-xsl, libxml2-utils and libxslt, which pull in libgcrypt and
+the docutils chain. glib's man pages only need rst2man; the DocBook
+tools are kept in depends_dev for glib-dev users when not
+bootstrapping. Without man pages glib-doc would be empty, which abuild
+refuses, so the subpackage is left out too.
+
+Without the variables the APKBUILD builds exactly what it built before.
+Generic, not specific to riscv32.
+---
+ main/glib/APKBUILD | 22 +++++++++++++---------
+ 1 file changed, 13 insertions(+), 9 deletions(-)
+
+diff --git a/main/glib/APKBUILD b/main/glib/APKBUILD
+index 0b2bf249877..2f43ca7ca51 100644
+--- a/main/glib/APKBUILD
++++ b/main/glib/APKBUILD
+@@ -13,14 +13,20 @@ license="LGPL-2.1-or-later"
+ triggers="$pkgname.trigger=/usr/share/glib-2.0/schemas:/usr/lib/gio/modules:/usr/lib/gtk-4.0"
+ depends_dev="
+ 	bzip2-dev
+-	docbook-xml
+-	docbook-xsl
+ 	gettext-dev
+-	libxml2-utils
+-	libxslt
+ 	python3
+ 	py3-packaging
+ 	"
++subpackages="$pkgname-dbg"
++_man_pages=disabled
++if [ -z "$BOOTSTRAP" ] && [ -z "$APORTS_BOOTSTRAP" ]; then
++	# man pages (rst2man) and the DocBook tools; these pull in libxml2,
++	# libxslt, libgcrypt and py3-docutils
++	depends_dev="$depends_dev docbook-xml docbook-xsl libxml2-utils libxslt"
++	_docdepends="py3-docutils"
++	subpackages="$subpackages $pkgname-doc"
++	_man_pages=enabled
++fi
+ makedepends="$depends_dev
+ 	bash
+ 	bison
+@@ -32,11 +38,9 @@ makedepends="$depends_dev
+ 	python3-dev
+ 	util-linux-dev
+ 	zlib-dev
+-	py3-docutils
++	$_docdepends
+ 	"
+-subpackages="
+-	$pkgname-dbg
+-	$pkgname-doc
++subpackages="$subpackages
+ 	$pkgname-static
+ 	$pkgname-dev
+ 	$pkgname-lang
+@@ -101,7 +105,7 @@ build() {
+ 		--reconfigure \
+ 		--pkg-config-path="$_prefix"/lib/pkgconfig \
+ 		--default-library=both \
+-		-Dman-pages=enabled \
++		-Dman-pages=$_man_pages \
+ 		-Dlibmount=enabled \
+ 		-Dtests="$(want_check && echo true || echo false)" \
+ 		-Dintrospection=enabled \
+-- 
+2.43.0
+
