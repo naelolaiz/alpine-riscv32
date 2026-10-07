@@ -20,7 +20,10 @@ result should also run on QEMU, LiteX or any other RV32 Linux system.
 The six patches in `patches/` are enough to cross-build Alpine's bootstrap
 list for riscv32 (156 packages, alpine-base included) and to boot it under
 `qemu-system-riscv32 -M virt` with mainline Linux 6.18 (`rv32_defconfig`) to
-an OpenRC login, with `apk add` working inside the VM. Per-package details are
+an OpenRC login, with `apk add` working inside the VM. Beyond that list,
+packages build natively in a riscv32 container run through qemu-user:
+dropbear and nano so far, with dropbear accepting SSH logins in the VM.
+Per-package details are
 in [`RISCV32.md`](RISCV32.md); the steps are in [`docs/steps/`](docs/steps/).
 
 ## Approach
