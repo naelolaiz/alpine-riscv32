@@ -91,6 +91,13 @@ The fix is a busybox patch in the package directory, because abuild deletes
     	int ret = settimeofday(NULL, tz);
    ```
 
+   Save, then check that the saved file has the new `#if`. The count goes
+   from 3 to 4 because the new line names `SYS_settimeofday`:
+
+   ```sh
+   grep -c SYS_settimeofday busybox-1.38.0/util-linux/hwclock.c
+   ```
+
 3. Write the patch next to the APKBUILD. `--label` writes the `a/` and `b/`
    names that `patch -p1` expects and leaves out timestamps, so the file is the
    same on every machine. HOST, same directory:
@@ -101,7 +108,10 @@ The fix is a busybox patch in the package directory, because abuild deletes
    ```
 
    The sum starts with `85878ab8`. If it does not, the edit differs; the usual
-   cause is spaces instead of a tab.
+   cause is spaces instead of a tab. `cf83e135` is the SHA-512 of an empty
+   file: `diff` writes nothing when the two files are the same, so the edit was
+   not saved, or it went into the `.orig` copy. abuild accepts and "applies" an
+   empty patch without complaint, and the build then fails exactly as before.
 
 4. Add it to `source=` in `aports/main/busybox/APKBUILD:90`, because abuild
    applies only the patches listed there, in that order:
