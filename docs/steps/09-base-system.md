@@ -33,10 +33,109 @@ cd /work/aports
 ```
 
 The native riscv32 gcc is the long part. This is the first time most of these
-packages are built for riscv32, so a failure is a finding, not a mistake: the
-last lines of the log name the package and the error, and it goes into
-[`RISCV32.md`](../../RISCV32.md) with its class (Alpine, upstream package,
-RV32, toolchain). After a fix, rerunning continues where it stopped.
+packages are built for riscv32, so a failure is a finding, not a mistake. It
+goes into [`RISCV32.md`](../../RISCV32.md) with its class (Alpine, upstream
+package, RV32, toolchain). After a fix, rerunning continues where it stopped,
+because abuild skips packages that are already built.
+
+The last lines of the log name the failing package but usually not the error,
+because make runs several compile jobs at once and the others keep printing
+after one fails. To find the compiler's error line, HOST, in the directory
+holding `aports` (the spaces around `error:` match gcc's errors and skip make's
+`Error 2` lines):
+
+```sh
+grep -n -B2 -A4 ' error: ' bootstrap-step9.log | head -n 30
+```
+
+## Fix 1: busybox, `SYS_settimeofday` undeclared
+
+busybox 1.38.0 stops in `util-linux/hwclock.c:143`:
+
+```
+error: 'SYS_settimeofday' undeclared (first use in this function)
+```
+
+`set_kernel_tz()` calls the raw `settimeofday` syscall, because musl's
+`settimeofday()` ignores the timezone argument. riscv32 is time64-only: its
+kernel never had the old settimeofday syscall, so musl's riscv32 syscall list
+has no `SYS_settimeofday` (riscv64 has it as 170). Without that syscall the
+kernel timezone cannot be set at all on riscv32, so the fix makes that step a
+no-op there. Buildroot carries a patch for the same error that returns failure
+instead; that would make `hwclock -s` stop before it sets the clock.
+
+The fix is a busybox patch in the package directory, because abuild deletes
+`src/` and unpacks it fresh on every build. abuild leaves the failed build's
+`src/` in place, which gives you the file to edit.
+
+1. Save an untouched copy, because `diff` needs the original to compare
+   against. HOST, in `aports/main/busybox/src`:
+
+   ```sh
+   cp busybox-1.38.0/util-linux/hwclock.c busybox-1.38.0/util-linux/hwclock.c.orig
+   ```
+
+2. Edit `busybox-1.38.0/util-linux/hwclock.c:143` so the syscall is only used
+   where it exists (indent with a tab):
+
+   ```diff
+    #endif
+   +#if defined(SYS_settimeofday)
+    	int ret = syscall(SYS_settimeofday, NULL, tz);
+   +#else
+   +	/* riscv32 is time64-only and has no settimeofday syscall,
+   +	 * so the kernel timezone cannot be set: nothing to do */
+   +	int ret = 0;
+   +#endif
+    #else
+    	int ret = settimeofday(NULL, tz);
+   ```
+
+3. Write the patch next to the APKBUILD. `--label` writes the `a/` and `b/`
+   names that `patch -p1` expects and leaves out timestamps, so the file is the
+   same on every machine. HOST, same directory:
+
+   ```sh
+   diff -u --label a/util-linux/hwclock.c --label b/util-linux/hwclock.c busybox-1.38.0/util-linux/hwclock.c.orig busybox-1.38.0/util-linux/hwclock.c > ../0043-hwclock-no-settimeofday-syscall-on-riscv32.patch
+   sha512sum ../0043-hwclock-no-settimeofday-syscall-on-riscv32.patch
+   ```
+
+   The sum starts with `85878ab8`. If it does not, the edit differs; the usual
+   cause is spaces instead of a tab.
+
+4. Add it to `source=` in `aports/main/busybox/APKBUILD:90`, because abuild
+   applies only the patches listed there, in that order:
+
+   ```diff
+    	0042-modprobe-Check-for-ELF-header-to-determine-if-module.patch
+   +	0043-hwclock-no-settimeofday-syscall-on-riscv32.patch
+    
+    	acpid.logrotate
+   ```
+
+5. Add its checksum, because abuild refuses a source file with no matching
+   `sha512sums` line. CONTAINER:
+
+   ```sh
+   cd /work/aports/main/busybox
+   abuild checksum
+   ```
+
+6. Commit under the neutral identity. HOST, in the directory holding `aports`:
+
+   ```sh
+   git -C aports add main/busybox/APKBUILD main/busybox/0043-hwclock-no-settimeofday-syscall-on-riscv32.patch
+   git -C aports commit -m "main/busybox: fix hwclock build on riscv32"
+   ```
+
+   This is [`patches/0006`](../../patches/0006-main-busybox-fix-hwclock-build-on-riscv32.patch).
+
+7. Rerun the bootstrap; it resumes at busybox. CONTAINER:
+
+   ```sh
+   cd /work/aports
+   ./scripts/bootstrap.sh riscv32 2>&1 | tee /work/bootstrap-step9b.log
+   ```
 
 ## 3. Check
 
