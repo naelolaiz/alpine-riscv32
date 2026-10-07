@@ -298,7 +298,17 @@ one:
 podman exec -u root alpine-rv32 apk add openssh-client
 ```
 
-CONTAINER `alpine-rv32`, as your user, the step 10 boot plus `-nic`:
+CONTAINER `alpine-rv32`, as your user, the step 10 boot plus a network card:
+
+- `-netdev user,...` is the host side: the user-mode network, with the
+  port forward.
+- `-device virtio-net-pci,netdev=net0` is the card in the VM, plugged into the
+  `virt` board's PCI bus and connected to that network by its `id`.
+- The shorter `-nic user,model=virtio-net-pci` does nothing on this board.
+  `-nic` only asks the board to create its default card, and QEMU's
+  `hw/riscv/virt.c` never does (`hw/arm/virt.c` calls `pci_init_nic_devices()`).
+  QEMU only warns `requested NIC ... was not created (not supported by this
+  machine?)` and boots without a card.
 
 ```sh
 qemu-system-riscv32 -M virt -m 256M -nographic \
@@ -306,7 +316,8 @@ qemu-system-riscv32 -M virt -m 256M -nographic \
 	-append "root=/dev/vda rw console=ttyS0" \
 	-drive file=/work/qemu/alpine-rv32.img,format=raw,if=virtio \
 	-virtfs local,path=/work/.local/share/abuild,mount_tag=repo,security_model=none,readonly=on \
-	-nic user,model=virtio-net-pci,hostfwd=tcp:127.0.0.1:2222-:22
+	-netdev user,id=net0,hostfwd=tcp:127.0.0.1:2222-:22 \
+	-device virtio-net-pci,netdev=net0
 ```
 
 In the VM, as root:
