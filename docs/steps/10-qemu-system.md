@@ -125,3 +125,120 @@ chroot /var/tmp/rootfs-riscv32 /bin/busybox uname -m
 ```
 
 It prints `riscv32`.
+
+## 5. The root tree, with install scripts
+
+CONTAINER as root. Use a fresh tree: the one from step 9 was installed with
+`--no-scripts`, so it has no applet links. `e2fsprogs` provides `mkfs.ext4`
+for section 6. apk itself chroots into the tree to run each script, and the
+binfmt rule from section 4 lets those riscv32 scripts run.
+
+```sh
+apk add e2fsprogs
+mkdir -p /var/tmp/alpine-rv32-root/etc/apk/keys
+cp /work/.config/abuild/*.rsa.pub /var/tmp/alpine-rv32-root/etc/apk/keys/
+apk add --root /var/tmp/alpine-rv32-root --initdb --arch riscv32 --repository /work/.local/share/abuild/main alpine-base
+ls -l /var/tmp/alpine-rv32-root/sbin/init
+```
+
+`/sbin/init` is a link to `/bin/busybox` that busybox's install script
+created; if it is missing, the scripts did not run.
+
+Then the settings a boot needs, still CONTAINER as root:
+
+1. A login prompt on the serial console. QEMU's `-nographic` shows only the
+   first serial port, `ttyS0`; the `tty1` to `tty6` gettys are for a screen.
+   `etc/inittab` ships the line commented out:
+
+   ```diff
+   /var/tmp/alpine-rv32-root/etc/inittab:16
+   -#ttyS0::respawn:/sbin/getty -L 115200 ttyS0 vt100
+   +ttyS0::respawn:/sbin/getty -L 115200 ttyS0 vt100
+   ```
+
+   ```sh
+   sed -i 's|^#ttyS0::|ttyS0::|' /var/tmp/alpine-rv32-root/etc/inittab
+   grep ttyS0 /var/tmp/alpine-rv32-root/etc/inittab
+   ```
+
+2. The root file system in `fstab`, so OpenRC knows what `/` is and how to
+   check and remount it:
+
+   ```sh
+   echo '/dev/vda	/	ext4	rw,relatime	0 1' >> /var/tmp/alpine-rv32-root/etc/fstab
+   cat /var/tmp/alpine-rv32-root/etc/fstab
+   ```
+
+3. A host name, which the `hostname` service sets at boot:
+
+   ```sh
+   echo alpine-rv32 > /var/tmp/alpine-rv32-root/etc/hostname
+   ```
+
+4. OpenRC services. Packages install services but do not enable them;
+   `rc-update add` creates the links in `/etc/runlevels/`. It runs inside the
+   tree through the binfmt rule.
+
+   | Service | Runlevel | Why |
+   | --- | --- | --- |
+   | devfs | sysinit | mounts `/dev/pts` and `/dev/shm` on the kernel's devtmpfs |
+   | dmesg | sysinit | sets the console log level |
+   | mdev | sysinit | busybox's device manager: device permissions from `/etc/mdev.conf`, hotplug |
+   | hostname | boot | sets the host name from `/etc/hostname` |
+   | bootmisc | boot | prepares `/var/run` and the login records (utmp, wtmp) |
+   | sysctl | boot | applies `/etc/sysctl.conf` and `/etc/sysctl.d` |
+   | syslog | boot | busybox syslogd, so `/var/log/messages` exists |
+   | killprocs | shutdown | stops leftover processes |
+   | mount-ro | shutdown | remounts `/` read-only before power off |
+
+   ```sh
+   chroot /var/tmp/alpine-rv32-root rc-update add devfs sysinit
+   chroot /var/tmp/alpine-rv32-root rc-update add dmesg sysinit
+   chroot /var/tmp/alpine-rv32-root rc-update add mdev sysinit
+   chroot /var/tmp/alpine-rv32-root rc-update add hostname boot
+   chroot /var/tmp/alpine-rv32-root rc-update add bootmisc boot
+   chroot /var/tmp/alpine-rv32-root rc-update add sysctl boot
+   chroot /var/tmp/alpine-rv32-root rc-update add syslog boot
+   chroot /var/tmp/alpine-rv32-root rc-update add killprocs shutdown
+   chroot /var/tmp/alpine-rv32-root rc-update add mount-ro shutdown
+   ```
+
+Alpine's `root` account has an empty password (`root::` in `etc/shadow`),
+so the console login needs none. Set one before this system is reachable
+over a network.
+
+## 6. The disk image
+
+CONTAINER as root. `mkfs.ext4 -d` creates the file system and copies the tree
+into it, owners included, without mounting anything (a rootless container
+cannot mount). 256M leaves room for `apk add`. Files that container root
+creates in `/work` would belong to a subordinate uid on the host, so the
+directory and the image are handed to the owner of `/work`, which is the host
+user.
+
+```sh
+install -d -o "$(stat -c %u /work)" -g "$(stat -c %g /work)" /work/qemu
+mkfs.ext4 -d /var/tmp/alpine-rv32-root -L alpine-rv32 /work/qemu/alpine-rv32.img 256M
+chown "$(stat -c %u:%g /work)" /work/qemu/alpine-rv32.img
+```
+
+## 7. Boot
+
+CONTAINER, as your user:
+
+```sh
+qemu-system-riscv32 -M virt -m 256M -nographic \
+	-kernel /work/linux-6.18/arch/riscv/boot/Image \
+	-append "root=/dev/vda rw console=ttyS0" \
+	-drive file=/work/qemu/alpine-rv32.img,format=raw,if=virtio
+```
+
+- `-M virt` is QEMU's generic RISC-V board. Its default `-bios` is OpenSBI,
+  which starts the kernel in supervisor mode, as on the ESP32-S31.
+- `-nographic` puts the first serial port on the terminal.
+- `root=/dev/vda` is the first virtio disk, and `console=ttyS0` sends kernel
+  messages to that serial port.
+- Ctrl-A then X quits QEMU.
+
+Done when: OpenRC starts the services above and `alpine-rv32 login:` accepts
+`root`.
