@@ -394,6 +394,24 @@ convention util-linux, curl and openssh already use. Without those variables
 the APKBUILDs build exactly what they build today, so the edits are generic
 and can go upstream.
 
+#### Apply the patches
+
+HOST, in the directory holding `aports` and `alpine-riscv32`. `git am`
+applies each patch and commits it with its author and message, so `aports`
+gets one commit per package, as in aports. `$PWD` is needed because `-C
+aports` makes git resolve paths from inside `aports`:
+
+```sh
+git -C aports am "$PWD"/alpine-riscv32/patches/000[789]-*.patch "$PWD"/alpine-riscv32/patches/0010-*.patch
+git -C aports log --oneline -5
+```
+
+The log shows the four commits on top of the busybox one (0006). If `am`
+stops at 0007 or 0008 because those edits are already in the tree,
+`git -C aports am --abort` and apply only 0009 and 0010.
+
+The four subsections below show what each patch changes and why.
+
 #### Edit 1: vim (patch 0007)
 
 `aports/community/vim/APKBUILD:15`, the dependency list:
@@ -559,7 +577,7 @@ e2fsprogs' `configure.ac` (`AC_ARG_ENABLE([fuse2fs]`) looks for fuse when
 none. The `fuse2fs` split function would then fail on the missing
 `usr/bin/fuse2fs`, so the two fuse2fs subpackages go with the dependency.
 
-#### Check and commit
+#### Check
 
 CONTAINER (either one). Each line prints `makedepends` and the subpackages;
 with the variable set, vim lists only `ncurses-dev` and no `gvim`, htop has no
@@ -575,23 +593,6 @@ cd /work/aports/main/e2fsprogs && APORTS_BOOTSTRAP=1 sh -c '. ./APKBUILD; echo $
 
 Run the same four lines without `APORTS_BOOTSTRAP=1` to see the full lists
 come back.
-
-HOST, in the directory holding `aports`. One commit per package, as in
-aports, so each becomes one patch in the series:
-
-```sh
-git -C aports add community/vim/APKBUILD
-git -C aports -c user.name=naelolaiz -c user.email=1333555+naelolaiz@users.noreply.github.com commit -m "community/vim: skip gvim and script interfaces when bootstrapping"
-git -C aports add main/htop/APKBUILD
-git -C aports -c user.name=naelolaiz -c user.email=1333555+naelolaiz@users.noreply.github.com commit -m "main/htop: build without lm-sensors when bootstrapping"
-git -C aports add main/glib/APKBUILD
-git -C aports -c user.name=naelolaiz -c user.email=1333555+naelolaiz@users.noreply.github.com commit -m "main/glib: no man pages and DocBook tools when bootstrapping"
-git -C aports add main/e2fsprogs/APKBUILD
-git -C aports -c user.name=naelolaiz -c user.email=1333555+naelolaiz@users.noreply.github.com commit -m "main/e2fsprogs: build without fuse2fs when bootstrapping"
-```
-
-The same four commits, with full commit messages, are patches 0007 to 0010
-in `patches/`; `git -C aports am` on them gives the same tree.
 
 #### Sources
 
