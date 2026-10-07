@@ -129,7 +129,8 @@ qemu-riscv32 -L /work/sysroot-riscv32 ./hello-dynamic
 ```
 
 - `file` must say `ELF 32-bit LSB ... UCB RISC-V, soft-float ABI`; the dynamic
-  one names `/lib/ld-musl-riscv32.so.1` as its interpreter.
+  one names `/lib/ld-musl-riscv32-sf.so.1` as its interpreter: musl adds
+  `-sf` to the loader name for soft-float ABIs.
 - `qemu-riscv32` runs a riscv32 Linux binary on x86_64 by translating its
   instructions and system calls. `-L` points it at the sysroot, where the
   dynamic binary's loader and libc live.

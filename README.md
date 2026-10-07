@@ -13,7 +13,7 @@ result should also run on QEMU, LiteX or any other RV32 Linux system.
 | Triplet | `riscv32-alpine-linux-musl` |
 | ISA / ABI | `rv32imac` / `ilp32` (soft-float) |
 | libc | musl (riscv32 upstream since 1.2.5), time64 |
-| Loader | `/lib/ld-musl-riscv32.so.1` |
+| Loader | `/lib/ld-musl-riscv32-sf.so.1` (musl adds `-sf` for the soft-float ABI) |
 
 ## Approach
 
