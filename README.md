@@ -15,6 +15,14 @@ result should also run on QEMU, LiteX or any other RV32 Linux system.
 | libc | musl (riscv32 upstream since 1.2.5), time64 |
 | Loader | `/lib/ld-musl-riscv32-sf.so.1` (musl adds `-sf` for the soft-float ABI) |
 
+## Status
+
+The six patches in `patches/` are enough to cross-build Alpine's bootstrap
+list for riscv32 (156 packages, alpine-base included) and to boot it under
+`qemu-system-riscv32 -M virt` with mainline Linux 6.18 (`rv32_defconfig`) to
+an OpenRC login, with `apk add` working inside the VM. Per-package details are
+in [`RISCV32.md`](RISCV32.md); the steps are in [`docs/steps/`](docs/steps/).
+
 ## Approach
 
 Patches live here as a series against a pinned

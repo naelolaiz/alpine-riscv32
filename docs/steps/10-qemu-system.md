@@ -247,5 +247,44 @@ qemu-system-riscv32 -M virt -m 256M -nographic \
   messages to that serial port.
 - Ctrl-A then X quits QEMU.
 
-Done when: OpenRC starts the services above and `alpine-rv32 login:` accepts
-`root`.
+At the login prompt, `root` needs no password. OpenRC also starts services
+the enabled ones depend on (modules, hwclock, sysfs, fsck, root, localmount);
+`rc-status -a` lists them under "needed/wanted".
+
+In the VM, `poweroff` shuts down through the shutdown runlevel (killprocs,
+mount-ro), which closes the ext4 image cleanly; Ctrl-A X is like pulling the
+plug.
+
+## 8. apk add inside the VM
+
+The local repository reaches the VM over virtio-9p, a file-sharing channel
+between QEMU and the guest (`CONFIG_9P_FS` and `CONFIG_NET_9P_VIRTIO` are in
+the defconfig). CONTAINER, as your user, the same boot plus `-virtfs`:
+
+```sh
+qemu-system-riscv32 -M virt -m 256M -nographic \
+	-kernel /work/linux-6.18/arch/riscv/boot/Image \
+	-append "root=/dev/vda rw console=ttyS0" \
+	-drive file=/work/qemu/alpine-rv32.img,format=raw,if=virtio \
+	-virtfs local,path=/work/.local/share/abuild,mount_tag=repo,security_model=none,readonly=on
+```
+
+- `path` is the directory to share; `mount_tag` is the name the guest mounts.
+- `security_model=none` reads the files with QEMU's own permissions.
+- `readonly=on` keeps the VM from changing the repository.
+
+In the VM, as root. `trans=virtio` selects the transport and `9p2000.L` the
+Linux dialect of the protocol. apk appends the architecture (`riscv32`) to the
+repository path itself, and the signing key is already in `/etc/apk/keys`:
+
+```sh
+mount -t 9p -o trans=virtio,version=9p2000.L repo /mnt
+apk add --repository /mnt/main file
+file /bin/busybox
+```
+
+`file` prints `ELF 32-bit LSB pie executable, UCB RISC-V, RVC, soft-float ABI
+... interpreter /lib/ld-musl-riscv32-sf.so.1`.
+
+Done when: OpenRC starts the services above, `alpine-rv32 login:` accepts
+`root`, and `apk add` installs from the local repository.
