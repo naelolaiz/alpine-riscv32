@@ -50,8 +50,9 @@ Python modules. Most of that weight is documentation and optional features.
 
 This step builds nano and dropbear (14 source packages), because Phase 4 needs
 an SSH server (step 17) and nano is the smallest real test of the
-environment. vim, htop and neofetch follow (section 7). The other six, mc and
-fastfetch come later, after trimming what they pull in (section 9).
+environment. The other six come later, after trimming what they pull in
+(section 8). vim, htop, neofetch, mc and fastfetch are parked until after
+Wi-Fi; section 8 keeps what they need.
 
 ## 1. Let setuid programs work through binfmt_misc
 
@@ -284,7 +285,89 @@ The loop is the table above in order. To go one package at a time instead,
 `cd skalibs && abuild -r`, and so on. After a failure and a fix, the same loop
 resumes: abuild skips packages that are already up to date.
 
-## 7. vim, htop and neofetch
+## 7. Check: SSH into the QEMU machine
+
+The step 10 VM can run dropbear. QEMU's user-mode network ("slirp") gives the
+VM a NAT connection and an address by DHCP. `hostfwd` forwards port 2222
+inside `alpine-rv32` to port 22 in the VM.
+
+HOST, an SSH client for `alpine-rv32`, because the Alpine image does not ship
+one:
+
+```sh
+podman exec -u root alpine-rv32 apk add openssh-client
+```
+
+CONTAINER `alpine-rv32`, as your user, the step 10 boot plus `-nic`:
+
+```sh
+qemu-system-riscv32 -M virt -m 256M -nographic \
+	-kernel /work/linux-6.18/arch/riscv/boot/Image \
+	-append "root=/dev/vda rw console=ttyS0" \
+	-drive file=/work/qemu/alpine-rv32.img,format=raw,if=virtio \
+	-virtfs local,path=/work/.local/share/abuild,mount_tag=repo,security_model=none,readonly=on \
+	-nic user,model=virtio-net-pci,hostfwd=tcp:127.0.0.1:2222-:22
+```
+
+In the VM, as root:
+
+- dropbear's OpenRC service `need`s `net`, which the `networking` service
+  provides from `/etc/network/interfaces`. The file does not exist yet.
+- dropbear refuses logins with an empty password, so root needs one. This
+  password is for the VM only.
+- The first start generates the host keys, which takes a while under
+  emulation.
+
+```sh
+mount -t 9p -o trans=virtio,version=9p2000.L repo /mnt
+apk add --repository /mnt/main dropbear nano
+printf 'auto lo\niface lo inet loopback\n\nauto eth0\niface eth0 inet dhcp\n' > /etc/network/interfaces
+rc-service networking start
+passwd
+rc-service dropbear start
+```
+
+`rc-service networking start` shows `eth0` getting `10.0.2.15`.
+
+A second terminal. HOST:
+
+```sh
+podman exec -it -u $(id -un) alpine-rv32 sh
+```
+
+CONTAINER `alpine-rv32`, at its prompt:
+
+```sh
+ssh -p 2222 root@127.0.0.1 uname -m
+```
+
+ssh asks to accept the host key, then the password, and prints `riscv32`.
+
+## 8. Later: the rest of the list
+
+The other six are not needed to boot Alpine on the board:
+
+- apk fetches over HTTP with its own code, so step 15 can test with
+  `apk add nano` instead of curl.
+- Without e2fsprogs there is no `fsck.ext4`, so the pendrive root gets
+  `0` in the `fstab` pass field until it exists.
+
+Before building them, the APKBUILDs can drop what is only documentation or an
+optional feature when `BOOTSTRAP` is set, as the parked vim and htop edits
+below do.
+Candidates: cmake's sphinx manual, e2fsprogs' `fuse2fs`, elfutils'
+debuginfod (which needs curl), and gdbserver built on its own instead of the
+full gdb. Each such change would be one generic patch in `patches/`.
+
+### Parked until after Wi-Fi: mc and fastfetch
+
+| Package | Not yet built, with edits | Why |
+| --- | --- | --- |
+| fastfetch | about 15 | cmake (without its sphinx manual) and yyjson; fastfetch's GPU, X11, Wayland, audio and image libraries are optional |
+| mc | about 38 | mc needs glib, glib builds with meson, and meson is a python3 program; mc's gpm mouse and ext2 attributes, glib's man pages and libmount are optional |
+
+
+### Parked until after Wi-Fi: vim, htop and neofetch
 
 Two of these pull in far more than they need. One small edit each brings
 them down:
@@ -304,7 +387,7 @@ convention util-linux, curl and openssh already use. Without those variables
 the APKBUILDs build exactly what they build today, so the edits are generic
 and can go upstream.
 
-### Edit 1: vim
+#### Edit 1: vim
 
 `aports/community/vim/APKBUILD:15`, the dependency list:
 
@@ -350,7 +433,7 @@ and can go upstream.
   it splits into the five flags. Without them, vim's `configure` leaves the
   interfaces off.
 
-### Edit 2: htop
+#### Edit 2: htop
 
 `aports/main/htop/APKBUILD:16`:
 
@@ -367,7 +450,7 @@ htop's `configure.ac` defaults `--enable-sensors` to `check`: without
 `sensors/sensors.h` it turns the feature off instead of failing. htop loads
 libsensors with `dlopen` at run time and only needs the header to build.
 
-### Check and commit
+#### Check and commit
 
 CONTAINER (either one), so both edits parse and switch as intended. Each line
 prints `makedepends` and the subpackages; with the variable set, vim lists only
@@ -391,7 +474,7 @@ git -C aports add main/htop/APKBUILD
 git -C aports -c user.name=naelolaiz -c user.email=1333555+naelolaiz@users.noreply.github.com commit -m "main/htop: build without lm-sensors when bootstrapping"
 ```
 
-### Sources
+#### Sources
 
 bison, help2man, readline (3 patch files) and bash (9 patch files) download
 from `ftp.gnu.org`. Instead of one curl per file, let abuild try Alpine's
@@ -413,7 +496,7 @@ cd /work/aports
 for p in main/bison main/help2man main/flex main/chrpath main/readline main/bash main/lsof main/htop community/vim testing/neofetch; do (cd $p && abuild fetch verify) || break; done
 ```
 
-### Build
+#### Build
 
 CONTAINER `rv32-native`, as your user. `APORTS_BOOTSTRAP=1` switches on the
 two edits; `ABUILD_BOOTSTRAP=1` skips the tests as in section 6.
@@ -430,98 +513,6 @@ The order follows the dependencies: bison and help2man before flex (its
 repository name from the APKBUILD's parent directory, so vim lands in
 `community/riscv32` and neofetch in `testing/riscv32` next to `main/riscv32`.
 
-## 8. Check: SSH into the QEMU machine
-
-The step 10 VM can run dropbear. QEMU's user-mode network ("slirp") gives the
-VM a NAT connection and an address by DHCP. `hostfwd` forwards port 2222
-inside `alpine-rv32` to port 22 in the VM.
-
-HOST, an SSH client for `alpine-rv32`, because the Alpine image does not ship
-one:
-
-```sh
-podman exec -u root alpine-rv32 apk add openssh-client
-```
-
-CONTAINER `alpine-rv32`, as your user, the step 10 boot plus `-nic`:
-
-```sh
-qemu-system-riscv32 -M virt -m 256M -nographic \
-	-kernel /work/linux-6.18/arch/riscv/boot/Image \
-	-append "root=/dev/vda rw console=ttyS0" \
-	-drive file=/work/qemu/alpine-rv32.img,format=raw,if=virtio \
-	-virtfs local,path=/work/.local/share/abuild,mount_tag=repo,security_model=none,readonly=on \
-	-nic user,model=virtio-net-pci,hostfwd=tcp:127.0.0.1:2222-:22
-```
-
-In the VM, as root:
-
-- dropbear's OpenRC service `need`s `net`, which the `networking` service
-  provides from `/etc/network/interfaces`. The file does not exist yet.
-- dropbear refuses logins with an empty password, so root needs one. This
-  password is for the VM only.
-- The first start generates the host keys, which takes a while under
-  emulation.
-
-```sh
-mount -t 9p -o trans=virtio,version=9p2000.L repo /mnt
-apk add --repository /mnt/main --repository /mnt/community --repository /mnt/testing dropbear nano vim htop neofetch
-printf 'auto lo\niface lo inet loopback\n\nauto eth0\niface eth0 inet dhcp\n' > /etc/network/interfaces
-rc-service networking start
-passwd
-rc-service dropbear start
-```
-
-`rc-service networking start` shows `eth0` getting `10.0.2.15`.
-
-A second terminal. HOST:
-
-```sh
-podman exec -it -u $(id -un) alpine-rv32 sh
-```
-
-CONTAINER `alpine-rv32`, at its prompt:
-
-```sh
-ssh -p 2222 root@127.0.0.1
-```
-
-ssh asks to accept the host key, then the password. In the SSH session:
-
-```sh
-uname -m
-neofetch
-htop
-```
-
-`uname -m` prints `riscv32`, neofetch prints its system summary next to the Alpine logo, and htop
-draws its process list (`q` quits). `exit` closes the session.
-
-## 9. Later: the rest of the list
-
-The other six are not needed to boot Alpine on the board:
-
-- apk fetches over HTTP with its own code, so step 15 can test with
-  `apk add nano` instead of curl.
-- Without e2fsprogs there is no `fsck.ext4`, so the pendrive root gets
-  `0` in the `fstab` pass field until it exists.
-
-Before building them, the APKBUILDs can drop what is only documentation or an
-optional feature when `BOOTSTRAP` is set, as section 7 does for vim and htop.
-Candidates: cmake's sphinx manual, e2fsprogs' `fuse2fs`, elfutils'
-debuginfod (which needs curl), and gdbserver built on its own instead of the
-full gdb. Each such change would be one generic patch in `patches/`.
-
-mc and fastfetch also wait here:
-
-| Package | Not yet built, with edits | Why |
-| --- | --- | --- |
-| fastfetch | about 15 | cmake (without its sphinx manual) and yyjson; fastfetch's GPU, X11, Wayland, audio and image libraries are optional |
-| mc | about 38 | mc needs glib, glib builds with meson, and meson is a python3 program; mc's gpm mouse and ext2 attributes, glib's man pages and libmount are optional |
-
-These can build in `rv32-native` in the background while Phase 4 runs on
-the board.
-
-Done when: nano, dropbear, vim, htop and neofetch are built in
-`rv32-native`, and they run over `ssh` in the QEMU machine.
+Done when: nano and dropbear are built in `rv32-native`, and `ssh` into the
+QEMU machine prints `riscv32`.
 Next: step 12, Alpine binaries on the board under Buildroot.
