@@ -50,8 +50,8 @@ Python modules. Most of that weight is documentation and optional features.
 
 This step builds nano and dropbear (14 source packages), because Phase 4 needs
 an SSH server (step 17) and nano is the smallest real test of the
-environment. The other six come later, after trimming what they pull in
-(section 8).
+environment. vim, htop and neofetch follow (section 7). The other six, mc and
+fastfetch come later, after trimming what they pull in (section 9).
 
 ## 1. Let setuid programs work through binfmt_misc
 
@@ -284,7 +284,153 @@ The loop is the table above in order. To go one package at a time instead,
 `cd skalibs && abuild -r`, and so on. After a failure and a fix, the same loop
 resumes: abuild skips packages that are already up to date.
 
-## 7. Check: SSH into the QEMU machine
+## 7. vim, htop and neofetch
+
+Two of these pull in far more than they need. One small edit each brings
+them down:
+
+| Package | Not yet built, as is | With the edit | What the edit drops |
+| --- | --- | --- | --- |
+| vim | 266 | 1 | gvim (gtk+3.0, X11) and the Lua, Perl, Python, Ruby and Tcl script interfaces; ruby alone pulls in rust and llvm |
+| htop | 136 | 8 | temperature readings through lm-sensors, whose package pulls in rrdtool, cairo and pango |
+| neofetch | 1 after bash | no edit | nothing: it is a bash script in `testing/` |
+
+The 8 for htop are bison, help2man, flex, chrpath, readline, bash, lsof and
+htop: htop's `depends` is lsof, whose `makedepends` has bash. Counted as in
+the table at the top.
+
+Both edits only apply when `BOOTSTRAP` or `APORTS_BOOTSTRAP` is set, the
+convention util-linux, curl and openssh already use. Without those variables
+the APKBUILDs build exactly what they build today, so the edits are generic
+and can go upstream.
+
+### Edit 1: vim
+
+`aports/community/vim/APKBUILD:15`, the dependency list:
+
+```diff
+-makedepends="
+-	lua$_luaver-dev
+-	ncurses-dev
+-	perl-dev
+-	python3-dev
+-	ruby-dev
+-	tcl-dev
+-	"
++makedepends="ncurses-dev"
++if [ -z "$BOOTSTRAP" ] && [ -z "$APORTS_BOOTSTRAP" ]; then
++	# script interfaces, loaded at run time; ruby alone pulls in rust and llvm
++	makedepends="$makedepends lua$_luaver-dev perl-dev python3-dev ruby-dev tcl-dev"
++	_interp_config="--enable-luainterp=dynamic --enable-perlinterp=dynamic
++		--enable-python3interp=dynamic --enable-rubyinterp=dynamic
++		--enable-tclinterp=dynamic"
++else
++	# gvim pulls in gtk+3.0 and X11
++	: "${BUILD_GVIM:=false}"
++fi
+```
+
+`aports/community/vim/APKBUILD:304` (line 307 after the first hunk), in `_build()`:
+
+```diff
+ 		--prefix=/usr \
+-		--enable-luainterp=dynamic \
+-		--enable-perlinterp=dynamic \
+-		--enable-python3interp=dynamic \
+-		--enable-rubyinterp=dynamic \
+-		--enable-tclinterp=dynamic \
++		$_interp_config \
+ 		--disable-nls \
+```
+
+- `BUILD_GVIM` is the APKBUILD's own switch (`: "${BUILD_GVIM:=true}"` a few
+  lines further down). `:=` only assigns when the variable is unset, so the
+  `false` set first wins.
+- `$_interp_config` is unquoted on purpose: empty, it adds no argument; set,
+  it splits into the five flags. Without them, vim's `configure` leaves the
+  interfaces off.
+
+### Edit 2: htop
+
+`aports/main/htop/APKBUILD:16`:
+
+```diff
+-makedepends="ncurses-dev linux-headers lm-sensors-dev"
++makedepends="ncurses-dev linux-headers"
++if [ -z "$BOOTSTRAP" ] && [ -z "$APORTS_BOOTSTRAP" ]; then
++	# lm-sensors pulls in rrdtool, cairo and pango
++	makedepends="$makedepends lm-sensors-dev"
++fi
+```
+
+htop's `configure.ac` defaults `--enable-sensors` to `check`: without
+`sensors/sensors.h` it turns the feature off instead of failing. htop loads
+libsensors with `dlopen` at run time and only needs the header to build.
+
+### Check and commit
+
+CONTAINER (either one), so both edits parse and switch as intended. Each line
+prints `makedepends` and the subpackages; with the variable set, vim lists only
+`ncurses-dev` and no `gvim`, and htop has no `lm-sensors-dev`:
+
+```sh
+cd /work/aports/community/vim
+sh -c '. ./APKBUILD; echo $makedepends; echo $subpackages'
+APORTS_BOOTSTRAP=1 sh -c '. ./APKBUILD; echo $makedepends; echo $subpackages'
+cd /work/aports/main/htop
+APORTS_BOOTSTRAP=1 sh -c '. ./APKBUILD; echo $makedepends'
+```
+
+HOST, in the directory holding `aports`. One commit per package, as in
+aports, so each becomes one patch in the series:
+
+```sh
+git -C aports add community/vim/APKBUILD
+git -C aports -c user.name=naelolaiz -c user.email=1333555+naelolaiz@users.noreply.github.com commit -m "community/vim: skip gvim and script interfaces when bootstrapping"
+git -C aports add main/htop/APKBUILD
+git -C aports -c user.name=naelolaiz -c user.email=1333555+naelolaiz@users.noreply.github.com commit -m "main/htop: build without lm-sensors when bootstrapping"
+```
+
+### Sources
+
+bison, help2man, readline (3 patch files) and bash (9 patch files) download
+from `ftp.gnu.org`. Instead of one curl per file, let abuild try Alpine's
+distfiles first. When `DISTFILES_MIRROR` is set, abuild's `uri_fetch_mirror()`
+asks for `$DISTFILES_MIRROR/<file name>` and only falls back to the original
+URL if that fails. Alpine's server keeps exactly the files its builders
+checksummed (as with fakeroot in step 9), which also avoids the regenerated
+GitHub and Codeberg archive tarballs. HOST, same directory; both containers
+read this file, because `HOME` is `/work` in both:
+
+```sh
+echo 'DISTFILES_MIRROR=https://distfiles.alpinelinux.org/distfiles/edge' >> .config/abuild/abuild.conf
+```
+
+CONTAINER `alpine-rv32`, as your user:
+
+```sh
+cd /work/aports
+for p in main/bison main/help2man main/flex main/chrpath main/readline main/bash main/lsof main/htop community/vim testing/neofetch; do (cd $p && abuild fetch verify) || break; done
+```
+
+### Build
+
+CONTAINER `rv32-native`, as your user. `APORTS_BOOTSTRAP=1` switches on the
+two edits; `ABUILD_BOOTSTRAP=1` skips the tests as in section 6.
+
+```sh
+export ABUILD_BOOTSTRAP=1 APORTS_BOOTSTRAP=1
+cd /work/aports
+for p in main/bison main/help2man main/flex main/chrpath main/readline main/bash main/lsof main/htop community/vim testing/neofetch; do (cd $p && abuild -r) || break; done
+```
+
+The order follows the dependencies: bison and help2man before flex (its
+`makedepends`), readline before bash, bash before lsof, lsof before htop
+(`abuild -r` also installs `depends`), bash before neofetch. abuild takes the
+repository name from the APKBUILD's parent directory, so vim lands in
+`community/riscv32` and neofetch in `testing/riscv32` next to `main/riscv32`.
+
+## 8. Check: SSH into the QEMU machine
 
 The step 10 VM can run dropbear. QEMU's user-mode network ("slirp") gives the
 VM a NAT connection and an address by DHCP. `hostfwd` forwards port 2222
@@ -319,7 +465,7 @@ In the VM, as root:
 
 ```sh
 mount -t 9p -o trans=virtio,version=9p2000.L repo /mnt
-apk add --repository /mnt/main dropbear nano
+apk add --repository /mnt/main --repository /mnt/community --repository /mnt/testing dropbear nano vim htop neofetch
 printf 'auto lo\niface lo inet loopback\n\nauto eth0\niface eth0 inet dhcp\n' > /etc/network/interfaces
 rc-service networking start
 passwd
@@ -337,12 +483,21 @@ podman exec -it -u $(id -un) alpine-rv32 sh
 CONTAINER `alpine-rv32`, at its prompt:
 
 ```sh
-ssh -p 2222 root@127.0.0.1 uname -m
+ssh -p 2222 root@127.0.0.1
 ```
 
-ssh asks to accept the host key, then the password, and prints `riscv32`.
+ssh asks to accept the host key, then the password. In the SSH session:
 
-## 8. Later: the rest of the list
+```sh
+uname -m
+neofetch
+htop
+```
+
+`uname -m` prints `riscv32`, neofetch prints its system summary next to the Alpine logo, and htop
+draws its process list (`q` quits). `exit` closes the session.
+
+## 9. Later: the rest of the list
 
 The other six are not needed to boot Alpine on the board:
 
@@ -352,12 +507,21 @@ The other six are not needed to boot Alpine on the board:
   `0` in the `fstab` pass field until it exists.
 
 Before building them, the APKBUILDs can drop what is only documentation or an
-optional feature when `BOOTSTRAP` is set, as util-linux, curl and openssh
-already do. Candidates: cmake's sphinx manual, e2fsprogs' `fuse2fs`,
-elfutils' debuginfod (which needs curl), and gdbserver built on its own
-instead of the full gdb. Each such change would be one generic patch in
-`patches/`.
+optional feature when `BOOTSTRAP` is set, as section 7 does for vim and htop.
+Candidates: cmake's sphinx manual, e2fsprogs' `fuse2fs`, elfutils'
+debuginfod (which needs curl), and gdbserver built on its own instead of the
+full gdb. Each such change would be one generic patch in `patches/`.
 
-Done when: nano and dropbear are built in `rv32-native`, and `ssh` into the
-QEMU machine prints `riscv32`.
+mc and fastfetch also wait here:
+
+| Package | Not yet built, with edits | Why |
+| --- | --- | --- |
+| fastfetch | about 15 | cmake (without its sphinx manual) and yyjson; fastfetch's GPU, X11, Wayland, audio and image libraries are optional |
+| mc | about 38 | mc needs glib, glib builds with meson, and meson is a python3 program; mc's gpm mouse and ext2 attributes, glib's man pages and libmount are optional |
+
+These can build in `rv32-native` in the background while Phase 4 runs on
+the board.
+
+Done when: nano, dropbear, vim, htop and neofetch are built in
+`rv32-native`, and they run over `ssh` in the QEMU machine.
 Next: step 12, Alpine binaries on the board under Buildroot.
