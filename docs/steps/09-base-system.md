@@ -19,8 +19,21 @@ curl -fL -o .cache/distfiles/patch-2.8.tar.xz https://mirrors.kernel.org/gnu/pat
 curl -fL -o .cache/distfiles/tar-1.35.tar.xz https://mirrors.kernel.org/gnu/tar/tar-1.35.tar.xz
 ```
 
-attr, acl and lzip come from savannah, a different server; they are fetched
-by abuild as usual.
+attr and acl download from `download.savannah.nongnu.org`, which only
+redirects to a mirror. In step 9 it picked `mirror.accum.se`, which never
+answered, and the container's busybox wget has no timeout, so the bootstrap
+hung at `Connecting to mirror.accum.se`. Fetch both from Savannah's own server
+instead (lzip's APKBUILD already uses it). abuild skips the download when the
+file is already in `.cache/distfiles` and still checks its sha512. HOST, same
+directory:
+
+```sh
+curl -fL --connect-timeout 20 -o .cache/distfiles/attr-2.5.2.tar.gz https://download-mirror.savannah.gnu.org/releases/attr/attr-2.5.2.tar.gz
+curl -fL --connect-timeout 20 -o .cache/distfiles/acl-2.3.2.tar.gz https://download-mirror.savannah.gnu.org/releases/acl/acl-2.3.2.tar.gz
+```
+
+If a fetch hangs anyway, Ctrl-C in the container stops it, and a rerun resumes
+at that package.
 
 ## 2. Run it
 
