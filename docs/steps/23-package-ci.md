@@ -208,17 +208,28 @@ apk add --repositories-file /dev/null --repository /root/ci-packages/main nano
 `--repositories-file /dev/null` leaves out the PC's server from step 15,
 which the board cannot reach without the cable.
 
-## Not tested yet
+## Tested so far
 
-This is a draft: no run has finished yet. Its first run will show
-whether these hold:
+A branch run without the secret (temporary key, built from scratch, run
+37707841282 on 2026-10-08) passed both build jobs:
 
-- The whole bootstrap fits in the `cross` job's 6 hours on a 4-core runner.
-- GitLab answers a shallow fetch of one commit (the script falls back to
-  GitHub's aports mirror).
-- `alpine:edge` on the day of the run still builds the pinned aports commit,
-  as it did on the PC.
-- Docker's default seccomp profile lets qemu-user run everything abuild does.
+- `cross`: the whole bootstrap list plus mdev-conf in 1 h 32 min, after
+  gmp moved to `ci/sources.txt`.
+- `native`: every package in `ci/native-packages.txt`, ncurses to dropbear,
+  in 1 h 38 min under qemu-user (dropbear alone 6 min).
+- 234 files, 360 MB with the x86_64 cross compiler.
+
+Not tested yet, because they need the secret, Pages and main:
+
+- The `publish` job and the site layout.
+- A second run starting from the published packages (`fetch-published.sh`
+  and the timestamp rule), which should skip everything already built.
+- Installing from the site on the board.
+
+## Known limits
+
+- `alpine:edge` changes every day; a future edge may no longer build the
+  pinned aports commit, as it would on the PC.
 - Old versions stay in the repository after a `pkgrel` bump; nothing prunes
   them yet. GitHub Pages allows 1 GB per site.
 - A new signing key needs a full rebuild, and the workflow has no switch for
