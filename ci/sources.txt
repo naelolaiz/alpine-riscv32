@@ -1,0 +1,8 @@
+# Sources whose own server fails from GitHub's runners, fetched from another
+# copy before abuild runs. "FILE URL" per line; FILE is the name abuild
+# expects in SRCDEST. abuild still checks each file's sha512sums, so a
+# wrong copy fails the build instead of going in.
+
+# gmplib.org did not answer (connection timed out, first CI run); GNU's
+# mirror has the same file, as in steps 8 and 9
+gmp-6.3.0.tar.xz https://mirrors.kernel.org/gnu/gmp/gmp-6.3.0.tar.xz

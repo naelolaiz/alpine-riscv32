@@ -107,6 +107,12 @@ paths in the logs are the ones from steps 7 to 11.
 are not downloaded every time. Each run saves a new copy; GitHub drops the
 oldest when the repository's caches pass 10 GB.
 
+Some upstream servers do not answer the runners (gmplib.org timed out on
+the first run). [`ci/sources.txt`](../../ci/sources.txt) lists those files
+with another copy, as the curl commands in steps 8 and 9 do on the PC, and
+`ci/prefetch-sources.sh` downloads them into `.cache/distfiles` first.
+abuild still checks their sha512.
+
 ### Published packages (`ci/fetch-published.sh`)
 
 Downloads every file listed in the published `files.txt` into
@@ -166,6 +172,10 @@ next to missing packages.
    packages it needs to build. abuild installs build dependencies only from
    what is built so far.
 3. Push to main.
+
+If its source server does not answer the runners, the log ends in
+`ERROR: <package>: fetch failed`; add the file with another copy to
+`ci/sources.txt`.
 
 To try a package first, push to another branch. That run builds on top of
 the published packages and publishes nothing; its result is the `repo`

@@ -74,6 +74,10 @@ jobs:
           key: distfiles-cross-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: distfiles-cross-
 
+      # Sources whose own server fails from the runners (ci/sources.txt)
+      - name: Download sources from other copies
+        run: alpine-riscv32/ci/prefetch-sources.sh
+
       # Skipped with a temporary key: its packages would not be signed by the
       # key the published ones are
       - name: Download the published packages
@@ -172,6 +176,10 @@ jobs:
           path: .cache/distfiles
           key: distfiles-native-${{ github.run_id }}-${{ github.run_attempt }}
           restore-keys: distfiles-native-
+
+      # Sources whose own server fails from the runners (ci/sources.txt)
+      - name: Download sources from other copies
+        run: alpine-riscv32/ci/prefetch-sources.sh
 
       - name: Get the repository from the cross job
         uses: actions/download-artifact@v4
