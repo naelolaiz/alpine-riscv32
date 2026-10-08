@@ -622,7 +622,29 @@ for p in main/expat main/bluez-headers main/libffi main/mpdecimal main/chrpath m
 
 #### Build
 
-CONTAINER `rv32-native`, as your user. `APORTS_BOOTSTRAP=1` switches on the
+First, OpenSSL again, natively. Its APKBUILD adds `no-threads` whenever
+`CBUILD` and `CHOST` differ (its comment: libatomic is not available when
+cross building), so the libcrypto3 and libssl3 from step 9 have no thread
+support, and python3's `_ssl` and `_hashopenssl` stop with `OPENSSL_THREADS
+is not defined, Python requires thread-safe OpenSSL`. Alpine's own
+bootstrap rebuilds openssl natively for the same reason. CONTAINER
+`rv32-native`, as your user:
+
+```sh
+export ABUILD_BOOTSTRAP=1 APORTS_BOOTSTRAP=1
+cd /work/aports/main/openssl && abuild -rf
+abuild-apk fix libcrypto3 libssl3
+tar -xzOf /work/.local/share/abuild/main/riscv32/openssl-dev-3.5.9-r*.apk usr/include/openssl/configuration.h 2>/dev/null | grep THREADS
+```
+
+- `-f` forces the build: the package from step 9 has the same version, so
+  abuild would otherwise call it up to date.
+- `abuild-apk fix` reinstalls the two libraries in the container from the
+  new packages; with the same version number apk would not replace them on
+  its own. The board needs the same `apk fix` once it gets the new packages.
+- The last line prints `OPENSSL_THREADS` and no `OPENSSL_NO_THREADS`.
+
+Then the three groups. `APORTS_BOOTSTRAP=1` switches on the
 four edits, and the gate util-linux already has (no PAM, Python bindings or
 `login`); `ABUILD_BOOTSTRAP=1` skips the tests as in section 6. Three groups,
 so each target is usable as soon as its group is done:

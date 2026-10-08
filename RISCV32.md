@@ -8,7 +8,7 @@ Failure classes: Alpine, upstream package, RV32, toolchain, kernel, board, memor
 | gcc | cross built (step 8), native built (step 9) | Alpine | 15.2.0-r9 gcc-riscv32, g++-riscv32 (0002); `rv32imac_zicsr_zifencei` / `ilp32`, autolink libatomic; D, libitm, Ada off. library dirs verified plain `lib` (multilib patch 0024 works for rv32) |
 | musl | built (step 8) | Alpine | 1.2.6-r5; `ARCH=riscv32` for the headers-only stage (0003) |
 | linux-headers | built (step 8) | | 7.2.1-r0; `riscv*` already maps to `riscv` |
-| openssl | built (step 9) | Alpine | 3.5.9; target `linux32-riscv32` (0004; exists in 3.5, links libatomic) |
+| openssl | built (step 9), rebuilt natively (step 11) | Alpine | 3.5.9; target `linux32-riscv32` (0004; exists in 3.5, links libatomic). The cross build adds `no-threads` (APKBUILD: `CBUILD != CHOST`), which python3 refuses; rebuilt natively with `abuild -rf` before python3, as Alpine's bootstrap does |
 | busybox | built (step 9), patched (0006) | RV32 | 1.38.0: `util-linux/hwclock.c` calls `syscall(SYS_settimeofday)` to set the kernel timezone. riscv32 is time64-only, so the kernel has no settimeofday syscall and musl defines no `SYS_settimeofday`. Patch `0043-hwclock-no-settimeofday-syscall-on-riscv32.patch` makes that step a no-op there, so `hwclock -s` still sets the clock. Buildroot's patch for the same error returns failure instead, which stops `hwclock -s` |
 | apk-tools | built (step 9) | | 3.0.8-r0; arch detection already handles rv32 |
 | openrc | built (step 9) | | 0.63.2-r1, no change needed |
