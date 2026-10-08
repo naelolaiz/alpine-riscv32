@@ -1,0 +1,25 @@
+# Packages the CI builds natively for riscv32, one aports directory per line,
+# built from top to bottom. A package's build dependencies must come before
+# it, because abuild installs them from the packages built so far.
+# bootstrap.sh's own list (step 9) and mdev-conf are cross-built before these.
+#
+# To add a package: add its line after its dependencies; if its APKBUILD
+# needs an edit, add the patch to patches/ in the same push.
+
+# step 11, section 5
+main/ncurses
+main/nano
+
+# step 11, section 6: dropbear and what autoreconf needs
+main/skalibs
+main/execline
+main/s6
+main/utmps
+main/bzip2
+main/tzdata
+main/perl
+main/texinfo
+main/m4
+main/autoconf
+main/automake
+main/dropbear

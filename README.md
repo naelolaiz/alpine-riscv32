@@ -35,6 +35,9 @@ full aports fork, so the delta stays small and reviewable:
 - [`aports.commit`](aports.commit): the aports commit the series applies to (master, 2026-10-06).
 - [`docs/steps/`](docs/steps/): how to set up the build environment and make the edits by hand.
 - `patches/`: `git format-patch` output, one fix per patch, numbered in apply order.
+- [`ci/`](ci/) and [`.github/workflows/packages.yml`](.github/workflows/packages.yml):
+  GitHub Actions builds the series and publishes the packages on GitHub Pages
+  ([guide](docs/steps/23-package-ci.md)).
 - `scripts/`: apply the series to a fresh aports checkout and run
   `scripts/bootstrap.sh riscv32` in an Alpine edge container.
 - [`RISCV32.md`](RISCV32.md): package status table.

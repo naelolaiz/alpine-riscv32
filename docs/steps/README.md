@@ -1,6 +1,6 @@
 # Steps
 
-These guides are steps 7 to 11 of the 24-step
+These guides are steps 7 to 11, and the CI part of step 23, of the 24-step
 [plan](https://github.com/naelolaiz/esp32s31-alpine/blob/main/docs/plan.md)
 of [esp32s31-alpine](https://github.com/naelolaiz/esp32s31-alpine), which
 runs this port on an ESP32-S31 board. Steps 7 to 11 need no board, so they
@@ -15,3 +15,4 @@ esp32s31-alpine ([step list](https://github.com/naelolaiz/esp32s31-alpine/blob/m
 | 9 | Base system | [09-base-system.md](09-base-system.md) |
 | 10 | Full-system QEMU | [10-qemu-system.md](10-qemu-system.md) |
 | 11 | Native builds in a riscv32 container | [11-native-build.md](11-native-build.md) |
+| 23 (part 1) | Package builds on GitHub Actions | [23-package-ci.md](23-package-ci.md) |
