@@ -211,8 +211,12 @@ jobs:
   # Up to four native parts in a row; a part runs only when the previous
   # one handed on the repository and left packages for lack of time (or
   # was stopped in the middle of a package, which leaves "left" empty)
+  # The if is needed although it only asks for cross: without a status
+  # function GitHub skips this job when any job before it was skipped,
+  # and on a branch the tag job always is
   native-1:
     needs: cross
+    if: ${{ !cancelled() && needs.cross.result == 'success' }}
     uses: ./.github/workflows/native.yml
     secrets: inherit
     with:
