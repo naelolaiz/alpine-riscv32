@@ -1,0 +1,54 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: naelolaiz <1333555+naelolaiz@users.noreply.github.com>
+Date: Sat, 10 Oct 2026 18:30:45 +0000
+Subject: [PATCH 14/17] main/cmake: no sphinx man pages when bootstrapping
+
+With BOOTSTRAP or APORTS_BOOTSTRAP set, build cmake without
+--sphinx-man and without py3-sphinx, which pulls in about 30 Python
+modules. cmake itself, its bundled curl and nghttp2 and cmake-doc
+(copyright and readme files) build as before.
+
+Many packages build with cmake (brotli and c-ares for curl, tcpdump),
+so on a new architecture this one edit takes about 33 source packages
+off their way.
+
+Without the variables the APKBUILD builds exactly what it built before.
+Generic, not specific to riscv32.
+---
+ main/cmake/APKBUILD | 8 ++++++--
+ 1 file changed, 6 insertions(+), 2 deletions(-)
+
+diff --git a/main/cmake/APKBUILD b/main/cmake/APKBUILD
+index 6d33f64f328..be1ff82f475 100644
+--- a/main/cmake/APKBUILD
++++ b/main/cmake/APKBUILD
+@@ -16,12 +16,16 @@ makedepends="
+ 	libuv-dev
+ 	linux-headers
+ 	ncurses-dev
+-	py3-sphinx
+ 	rhash-dev
+ 	samurai
+ 	xz-dev
+ 	zlib-dev
+ 	"
++if [ -z "$BOOTSTRAP" ] && [ -z "$APORTS_BOOTSTRAP" ]; then
++	# man pages; sphinx pulls in about 30 Python modules
++	makedepends="$makedepends py3-sphinx"
++	_sphinx_man="--sphinx-man"
++fi
+ checkdepends="file"
+ subpackages="
+ 	ccmake
+@@ -48,7 +52,7 @@ build() {
+ 		--mandir=/share/man \
+ 		--datadir=/share/$pkgname \
+ 		--docdir=/share/doc/$pkgname \
+-		--sphinx-man \
++		$_sphinx_man \
+ 		--no-system-cppdap \
+ 		--no-system-curl \
+ 		--no-system-jsoncpp \
+-- 
+2.43.0
+

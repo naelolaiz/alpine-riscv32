@@ -1,0 +1,41 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: naelolaiz <1333555+naelolaiz@users.noreply.github.com>
+Date: Sat, 10 Oct 2026 18:31:03 +0000
+Subject: [PATCH 16/17] main/git: xmlto only for the full build
+
+xmlto is only used to build the man pages, which the APKBUILD already
+builds only when neither BOOTSTRAP nor APORTS_BOOTSTRAP is set. Move it
+into that branch next to asciidoc. When bootstrapping this saves xmlto
+and its DocBook, libxslt and libgcrypt chain, about 8 source packages.
+
+The full build gets the same makedepends as before.
+Generic, not specific to riscv32.
+---
+ main/git/APKBUILD | 4 ++--
+ 1 file changed, 2 insertions(+), 2 deletions(-)
+
+diff --git a/main/git/APKBUILD b/main/git/APKBUILD
+index f68db687dcf..fedc7845b0e 100644
+--- a/main/git/APKBUILD
++++ b/main/git/APKBUILD
+@@ -78,7 +78,6 @@ makedepends="
+ 	pcre2-dev
+ 	perl-dev
+ 	perl-error
+-	xmlto
+ 	zlib-dev
+ 	"
+ checkdepends="openssh-client-common openssh-keygen" # force ssh-agent test to run
+@@ -112,7 +111,8 @@ _gitcoredir=usr/libexec/git-core
+ 
+ if [ -z "$BOOTSTRAP" ] && [ -z "$APORTS_BOOTSTRAP" ]; then
+ 	# we need tcl and tk to be built before git due to git-gui and gitk
+-	makedepends="$makedepends asciidoc python3-dev tcl tk libsecret-dev glib-dev"
++	# xmlto and asciidoc for the man pages
++	makedepends="$makedepends asciidoc xmlto python3-dev tcl tk libsecret-dev glib-dev"
+ 	subpackages="$subpackages
+ 		$pkgname-doc
+ 		$pkgname-p4::noarch
+-- 
+2.43.0
+

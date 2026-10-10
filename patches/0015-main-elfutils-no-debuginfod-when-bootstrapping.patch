@@ -1,0 +1,74 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: naelolaiz <1333555+naelolaiz@users.noreply.github.com>
+Date: Sat, 10 Oct 2026 18:30:54 +0000
+Subject: [PATCH 15/17] main/elfutils: no debuginfod when bootstrapping
+
+With BOOTSTRAP or APORTS_BOOTSTRAP set, configure with
+--disable-libdebuginfod --disable-debuginfod and leave out curl-dev,
+json-c-dev, libarchive-dev, libmicrohttpd-dev and sqlite-dev, and the
+libdebuginfod and debuginfod subpackages. The debuginfod client and
+server pull in curl, gnutls, libmicrohttpd and json-c, about 20 source
+packages on a new architecture; libelf, libdw and libasm, which gdb,
+strace and iproute2 link, build as before.
+
+Without the variables the APKBUILD builds exactly what it built before.
+Generic, not specific to riscv32.
+---
+ main/elfutils/APKBUILD | 21 ++++++++++++---------
+ 1 file changed, 12 insertions(+), 9 deletions(-)
+
+diff --git a/main/elfutils/APKBUILD b/main/elfutils/APKBUILD
+index df160143ca2..a84206ef433 100644
+--- a/main/elfutils/APKBUILD
++++ b/main/elfutils/APKBUILD
+@@ -16,17 +16,12 @@ makedepends="
+ 	bison
+ 	bsd-compat-headers
+ 	bzip2-dev
+-	curl-dev
+ 	flex-dev
+-	json-c-dev
+-	libarchive-dev
+-	libmicrohttpd-dev
+ 	libtool
+ 	linux-headers
+ 	musl-fts-dev
+ 	musl-libintl
+ 	musl-obstack-dev
+-	sqlite-dev
+ 	xz-dev
+ 	zlib-dev
+ 	zstd-dev
+@@ -35,8 +30,17 @@ subpackages="
+ 	libasm
+ 	libdw
+ 	libelf
+-	libdebuginfod
+-	debuginfod
++	"
++_debuginfod="--disable-libdebuginfod --disable-debuginfod"
++if [ -z "$BOOTSTRAP" ] && [ -z "$APORTS_BOOTSTRAP" ]; then
++	# debuginfod client and server; they pull in curl, gnutls,
++	# libmicrohttpd and json-c
++	makedepends="$makedepends curl-dev json-c-dev libarchive-dev
++		libmicrohttpd-dev sqlite-dev"
++	subpackages="$subpackages libdebuginfod debuginfod"
++	_debuginfod="--enable-libdebuginfod --enable-debuginfod"
++fi
++subpackages="$subpackages
+ 	$pkgname-dev
+ 	$pkgname-doc
+ 	"
+@@ -81,8 +85,7 @@ build() {
+ 		--program-prefix=eu- \
+ 		--enable-deterministic-archives \
+ 		--disable-nls \
+-		--enable-libdebuginfod \
+-		--enable-debuginfod \
++		$_debuginfod \
+ 		--with-zstd
+ 	make
+ }
+-- 
+2.43.0
+

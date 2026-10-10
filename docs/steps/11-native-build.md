@@ -807,6 +807,146 @@ for p in main/libedit main/pcre2 main/swig main/libcap-ng main/util-linux main/g
   upgrade`. Nothing else needs a rebuild: glib and mc call pcre2 through
   its shared library.
 
+### Small tools and Wi-Fi
+
+Built after the five above, these need 30 source packages and one edit,
+patch 0013 for wpa_supplicant:
+
+- everyday: tmux, less, tree, ncdu, btop, rsync
+- board and hardware: dtc, i2c-tools, evtest, memtester, dosfstools,
+  exfatprogs
+- Wi-Fi and network: wpa_supplicant, iw, wireless-regdb, iperf3, ethtool,
+  socat
+- lua5.4
+
+The other 11 are their libraries and build tools: libevent (tmux),
+coreutils, bmake and lowdown (btop's build and man page), libidn2, lz4,
+popt and xxhash (rsync), musl-fts (exfatprogs), libnl3 (iw,
+wpa_supplicant), libmnl (ethtool).
+
+#### Edit 7: wpa_supplicant (patch 0013)
+
+As is, wpa_supplicant needs about 86 source packages: dbus (about 20) for
+its D-Bus control interface and pcsc-lite (about 80, through eudev and gobject-introspection) for
+SIM cards. Native Wi-Fi only needs `wpa_cli` and the control socket, so the
+patch leaves both out when bootstrapping. `aports/main/wpa_supplicant/APKBUILD:12`
+and `:65`:
+
+```diff
+@@ -9,7 +9,12 @@ arch="all"
+ options="!check" # has no tests
+ license="BSD-3-Clause"
+ subpackages="$pkgname-doc $pkgname-openrc $pkgname-systemd"
+-makedepends="linux-headers openssl-dev>3 dbus-dev libnl3-dev pcsc-lite-dev"
++makedepends="linux-headers openssl-dev>3 libnl3-dev"
++if [ -z "$BOOTSTRAP" ] && [ -z "$APORTS_BOOTSTRAP" ]; then
++	# D-Bus control interface and PC/SC smartcards (EAP-SIM/AKA with a
++	# SIM card); dbus and pcsc-lite pull in about 85 source packages
++	makedepends="$makedepends dbus-dev pcsc-lite-dev"
++fi
+ provides="nm-wifi-backend"
+ provider_priority=10 # highest
+ source="https://w1.fi/releases/wpa_supplicant-$pkgver.tar.gz
+@@ -63,6 +68,10 @@ prepare() {
+ 
+ 	# Copy our configuration file to the build directory
+ 	cp "$srcdir"/config "$builddir"/wpa_supplicant/.config
++	if [ -n "$BOOTSTRAP" ] || [ -n "$APORTS_BOOTSTRAP" ]; then
++		sed -i -e '/^CONFIG_CTRL_IFACE_DBUS/d' -e '/^CONFIG_PCSC=/d' \
++			"$builddir"/wpa_supplicant/.config
++	fi
+ }
+ 
+ build() {
+```
+
+- The `makedepends` hunk drops the two libraries; the `prepare()` hunk
+  deletes the three options that need them from the build's `.config`, a
+  copy of the `config` file next to the APKBUILD.
+- EAP-SIM and EAP-AKA stay enabled: `src/utils/pcsc_funcs.h` has no-op
+  stubs when `PCSC_FUNCS` is not defined, so they only lose access to a
+  physical SIM card.
+- The OpenRC service only adds `-u` (D-Bus) when asked to, so with an
+  `/etc/wpa_supplicant/wpa_supplicant.conf` it starts as before.
+
+HOST, in the directory holding `aports` and `alpine-riscv32`, as for the
+other patches:
+
+```sh
+git -C aports am "$PWD"/alpine-riscv32/patches/0013-*.patch
+```
+
+#### Sources and build
+
+CONTAINER `alpine-rv32`, as your user:
+
+```sh
+cd /work/aports
+for p in main/libevent main/tmux main/less main/tree main/ncdu main/coreutils community/bmake community/lowdown community/btop main/libidn2 main/lz4 main/popt main/xxhash main/rsync main/dtc community/i2c-tools community/evtest community/memtester main/dosfstools main/musl-fts community/exfatprogs main/libnl3 main/iw main/wireless-regdb main/wpa_supplicant main/iperf3 main/libmnl main/ethtool main/socat main/lua5.4; do (cd $p && abuild fetch verify) || break; done
+```
+
+CONTAINER `rv32-native`, as your user, with the same two variables as
+above:
+
+```sh
+export ABUILD_BOOTSTRAP=1 APORTS_BOOTSTRAP=1
+cd /work/aports
+for p in main/libevent main/tmux main/less main/tree main/ncdu main/coreutils community/bmake community/lowdown community/btop main/libidn2 main/lz4 main/popt main/xxhash main/rsync main/dtc community/i2c-tools community/evtest community/memtester main/dosfstools main/musl-fts community/exfatprogs main/libnl3 main/iw main/wireless-regdb main/wpa_supplicant main/iperf3 main/libmnl main/ethtool main/socat main/lua5.4; do (cd $p && abuild -r) || break; done
+```
+
+The order follows the dependencies: each library comes right before the
+first package that needs it, and bmake before lowdown before btop.
+
+### Developer and network tools
+
+cmake, curl, git, wget, gdb, tcpdump, iproute2, nmap and the full openssh
+(client and `sftp-server`). Built after the two batches above, they need
+27 source packages with four more edits, patches 0014 to 0017. Without the
+edits curl alone would need 44 and git 54, nearly all of it the Python
+modules behind cmake's manual.
+
+| Patch | Package | Left out when bootstrapping | Why it matters |
+| --- | --- | --- | --- |
+| 0014 | cmake | the man pages (`--sphinx-man`, py3-sphinx) | sphinx is about 30 Python modules; brotli, c-ares (both for curl) and tcpdump build with cmake |
+| 0015 | elfutils | the debuginfod client and server | they need curl, gnutls, libmicrohttpd and json-c; gdb and iproute2 only need libelf and libdw |
+| 0016 | git | xmlto in the base `makedepends` | it is only used for the man pages, which git already skips when bootstrapping |
+| 0017 | gdb | the second full build for `gdb-multiarch`, and `--with-debuginfod` | debuginfod is gone with 0015; the APKBUILD itself notes `--enable-targets=all` is broken on 32-bit targets since GDB 12.1 |
+
+Each patch's commit message has the details; the diffs are in
+[`patches/`](../../patches/).
+
+- strace is not in the list: it has no riscv32 port (`src/linux/` has
+  `riscv64` only, and `configure.ac` knows only `riscv64*`), so it would
+  stop at `configure`. That is a porting job of its own.
+- gdb has RISC-V Linux support, but nobody in this project has built it
+  for riscv32 yet; it is the one most likely to need a fix. It builds last
+  in the loop, so the others are done if it stops.
+
+HOST, in the directory holding `aports` and `alpine-riscv32`:
+
+```sh
+git -C aports am "$PWD"/alpine-riscv32/patches/001[4567]-*.patch
+```
+
+CONTAINER `alpine-rv32`, as your user:
+
+```sh
+cd /work/aports
+for p in main/libarchive main/libuv main/rhash main/cmake main/groff main/brotli main/c-ares main/libpsl main/libev main/nghttp2 main/curl main/perl-error main/git main/wget main/argp-standalone main/musl-obstack main/elfutils main/libpcap main/tcpdump main/jansson main/libnftnl main/iptables main/iproute2 main/pcre main/nmap main/openssh main/gdb; do (cd $p && abuild fetch verify) || break; done
+```
+
+CONTAINER `rv32-native`, as your user:
+
+```sh
+export ABUILD_BOOTSTRAP=1 APORTS_BOOTSTRAP=1
+cd /work/aports
+for p in main/libarchive main/libuv main/rhash main/cmake main/groff main/brotli main/c-ares main/libpsl main/libev main/nghttp2 main/curl main/perl-error main/git main/wget main/argp-standalone main/musl-obstack main/elfutils main/libpcap main/tcpdump main/jansson main/libnftnl main/iptables main/iproute2 main/pcre main/nmap main/openssh main/gdb; do (cd $p && abuild -r) || break; done
+```
+
+The order follows the dependencies: cmake first, because brotli and
+c-ares build with it, then curl's libraries, curl, git; elfutils before
+iproute2 and gdb; libpcap before tcpdump and nmap.
+
 Done when: nano and dropbear are built in `rv32-native`, and `ssh` into the
 QEMU machine prints `riscv32`.
 Next: step 12, Alpine binaries on the board under Buildroot.

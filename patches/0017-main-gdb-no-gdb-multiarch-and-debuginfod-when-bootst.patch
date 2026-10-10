@@ -1,0 +1,71 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: naelolaiz <1333555+naelolaiz@users.noreply.github.com>
+Date: Sat, 10 Oct 2026 18:31:12 +0000
+Subject: [PATCH 17/17] main/gdb: no gdb-multiarch and debuginfod when
+ bootstrapping
+
+With BOOTSTRAP or APORTS_BOOTSTRAP set, skip the second full build for
+gdb-multiarch and configure with --without-debuginfod: elfutils leaves
+out its debuginfod client library when bootstrapping, and gdb's
+configure fails on --with-debuginfod without it.
+
+Skipping gdb-multiarch also avoids --enable-targets=all on 32-bit
+architectures other than arm and x86, which the APKBUILD notes is
+broken since GDB 12.1.
+
+Without the variables the APKBUILD builds exactly what it built before.
+Generic, not specific to riscv32.
+---
+ main/gdb/APKBUILD | 15 +++++++++++++--
+ 1 file changed, 13 insertions(+), 2 deletions(-)
+
+diff --git a/main/gdb/APKBUILD b/main/gdb/APKBUILD
+index 2ed3e9b17b1..c0b9c4baaeb 100644
+--- a/main/gdb/APKBUILD
++++ b/main/gdb/APKBUILD
+@@ -25,7 +25,15 @@ makedepends="
+ 	zstd-dev
+ 	"
+ options="!check"
+-subpackages="$pkgname-dbg $pkgname-doc $pkgname-multiarch"
++subpackages="$pkgname-dbg $pkgname-doc"
++_debuginfod="--without-debuginfod"
++if [ -z "$BOOTSTRAP" ] && [ -z "$APORTS_BOOTSTRAP" ]; then
++	# gdb-multiarch is a second full build; debuginfod needs elfutils'
++	# client library, which elfutils skips when bootstrapping
++	subpackages="$subpackages $pkgname-multiarch"
++	_debuginfod="--with-debuginfod"
++	_multiarch=1
++fi
+ source="https://ftp.gnu.org/gnu/gdb/gdb-$pkgver.tar.xz
+ 	gcore-sh.patch
+ 	s390x-use-elf-gdb_fpregset_t.patch
+@@ -48,7 +56,7 @@ build() {
+ 		--with-build-sysroot=$CBUILDROOT
+ 		--with-python=/usr/bin/python3
+ 		--with-lzma
+-		--with-debuginfod
++		$_debuginfod
+ 		--disable-nls
+ 		--disable-werror
+ 		--mandir=/usr/share/man
+@@ -70,6 +78,8 @@ build() {
+ 	../configure $_config
+ 	make
+ 
++	[ -n "$_multiarch" ] || return 0
++
+ 	# XXX: As of GDB 12.1, --enable-targets=all is broken on 32-bit targets.
+ 	#
+ 	# See: https://sourceware.org/pipermail/gdb-patches/2022-May/189227.html
+@@ -105,6 +115,7 @@ package() {
+ 	rm "$pkgdir"/usr/share/info/sframe-spec.info
+ 
+ 	# install gdb-multiarch here for default dbg() split function to work
++	[ -n "$_multiarch" ] || return 0
+ 	install -Dm755 "$builddir"/multiarch/gdb/gdb \
+ 		"$pkgdir"/usr/bin/gdb-multiarch
+ }
+-- 
+2.43.0
+
