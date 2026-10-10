@@ -32,11 +32,20 @@ in [`RISCV32.md`](RISCV32.md); the steps are in [`docs/steps/`](docs/steps/).
 
 ## Packages
 
-Built packages are published as GitHub releases. The latest is
-[packages-2026-10-10](https://github.com/naelolaiz/alpine-riscv32/releases/tag/packages-2026-10-10):
-the main, community and testing repositories for riscv32 in one archive, plus
-the public key that signs them. The release notes list the natively built
-packages and show how to install them on a board.
+Built packages are published in two ways by the
+[package workflow](docs/steps/23-package-ci.md):
+
+- As an apk repository on GitHub Pages, updated by every build on main:
+  `https://naelolaiz.github.io/alpine-riscv32/main` (and `/community`,
+  `/testing`), with the signing keys at
+  [naelolaiz.github.io/alpine-riscv32](https://naelolaiz.github.io/alpine-riscv32/).
+- As [GitHub releases](https://github.com/naelolaiz/alpine-riscv32/releases),
+  one per pushed `packages-*` tag, each built from scratch: the main,
+  community and testing repositories for riscv32 in one archive, plus the
+  public keys that sign them. The first,
+  [packages-2026-10-10](https://github.com/naelolaiz/alpine-riscv32/releases/tag/packages-2026-10-10),
+  was built on a PC. The release notes list what changed and show how to
+  install the packages on a board.
 
 ## Approach
 
@@ -48,8 +57,8 @@ full aports fork, so the delta stays small and reviewable:
 - [`docs/steps/`](docs/steps/): how to set up the build environment and make the edits by hand.
 - `patches/`: `git format-patch` output, one fix per patch, numbered in apply order.
 - [`ci/`](ci/) and [`.github/workflows/packages.yml`](.github/workflows/packages.yml):
-  GitHub Actions builds the series and publishes the packages on GitHub Pages
-  ([guide](docs/steps/23-package-ci.md)).
+  GitHub Actions builds the series and publishes the packages on GitHub Pages,
+  and as a release for each pushed tag ([guide](docs/steps/23-package-ci.md)).
 - `scripts/`: apply the series to a fresh aports checkout and run
   `scripts/bootstrap.sh riscv32` in an Alpine edge container.
 - [`RISCV32.md`](RISCV32.md): package status table.

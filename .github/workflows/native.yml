@@ -1,0 +1,162 @@
+# The native job of packages.yml (step 11) as a reusable workflow, so
+# packages.yml can run it several times in a row ("parts"). Each part starts
+# no new package after budget-minutes and hands the repository on; the next
+# part skips what is built and continues with the rest. A build from
+# scratch (a release tag) needs more than one job's 6 hours.
+
+name: riscv32 native builds
+
+on:
+  workflow_call:
+    inputs:
+      part:
+        description: Number of this part, for log and cache names
+        type: string
+        required: true
+      temporary-key:
+        description: "'true' when the cross job signed with a temporary key"
+        type: string
+        required: true
+      budget-minutes:
+        description: Minutes this part may start new packages for
+        type: string
+        default: "300"
+    outputs:
+      uploaded:
+        description: "'true' when this part handed on the repository"
+        value: ${{ jobs.native.outputs.uploaded }}
+      left:
+        description: Packages not started for lack of time (empty if the build step was stopped)
+        value: ${{ jobs.native.outputs.left }}
+
+permissions:
+  contents: read
+
+jobs:
+  native:
+    runs-on: ubuntu-24.04
+    timeout-minutes: 360
+    outputs:
+      uploaded: ${{ steps.upload.outcome == 'success' }}
+      left: ${{ steps.build.outputs.left }}
+    steps:
+      - uses: actions/checkout@v5
+        with:
+          path: alpine-riscv32
+
+      - name: Free disk space
+        run: |
+          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
+          df -h /
+
+      - name: Get the temporary key from the cross job
+        if: inputs.temporary-key == 'true'
+        uses: actions/download-artifact@v7
+        with:
+          name: temporary-key
+          path: .config/abuild
+
+      - name: Prepare aports, signing key and build container
+        env:
+          ABUILD_PRIVKEY: ${{ secrets.ABUILD_PRIVKEY }}
+        run: alpine-riscv32/ci/prepare.sh
+
+      - name: Restore downloaded sources
+        uses: actions/cache/restore@v5
+        with:
+          path: .cache/distfiles
+          key: distfiles-native-${{ github.run_id }}-${{ github.run_attempt }}-${{ inputs.part }}
+          restore-keys: distfiles-native-
+
+      # Sources whose own server fails from the runners (ci/sources.txt)
+      - name: Download sources from other copies
+        run: alpine-riscv32/ci/prefetch-sources.sh
+
+      # From the cross job, or from the previous part
+      - name: Get the repository from the previous job
+        uses: actions/download-artifact@v7
+        with:
+          name: repo
+          path: .local/share/abuild
+
+      # Step 11, section 5: download in the x86_64 container, without
+      # emulation. A failure here only warns: abuild tries again in the build.
+      - name: Download the sources (x86_64)
+        run: |
+          sed -e 's/#.*//' alpine-riscv32/ci/native-packages.txt | while read -r p _; do
+            [ -n "$p" ] || continue
+            docker exec -u builder -w "/work/aports/$p" alpine-rv32 abuild fetch verify ||
+              echo "::warning::could not download the sources of $p"
+          done
+
+      # Step 10, section 4 and step 11, section 1: Alpine's static
+      # qemu-riscv32 and its binfmt_misc rule, registered with OCFP. F opens
+      # the interpreter now, so it works inside containers; C lets setuid
+      # riscv32 programs (abuild-apk) keep their rights.
+      - name: Let the runner run riscv32 programs
+        run: |
+          docker exec alpine-rv32 apk add -q qemu-riscv32
+          docker exec alpine-rv32 cp /usr/bin/qemu-riscv32 /work/qemu-riscv32-static
+          docker exec alpine-rv32 cp /usr/lib/binfmt.d/qemu-riscv32.conf /work/
+          [ -e /proc/sys/fs/binfmt_misc/register ] || sudo mount -t binfmt_misc binfmt_misc /proc/sys/fs/binfmt_misc
+          if [ -e /proc/sys/fs/binfmt_misc/qemu-riscv32 ]; then echo -1 | sudo tee /proc/sys/fs/binfmt_misc/qemu-riscv32; fi
+          sed -e "s|/usr/bin/qemu-riscv32|$PWD/qemu-riscv32-static|" -e 's|:[A-Z]*$|:OCFP|' qemu-riscv32.conf | sudo tee /proc/sys/fs/binfmt_misc/register
+          cat /proc/sys/fs/binfmt_misc/qemu-riscv32
+
+      # Step 11, sections 2 and 3, with docker instead of podman: a riscv32
+      # tree from the cross-built packages, imported as an image, run with
+      # /work mounted and a user with the runner's uid. It trusts every key
+      # in the repository directory: this run's and those of packages
+      # carried over from earlier ones.
+      - name: Build the riscv32 build container
+        run: |
+          docker exec alpine-rv32 sh -c 'mkdir -p /var/tmp/rv32-native/etc/apk/keys && cp /work/.local/share/abuild/*.rsa.pub /var/tmp/rv32-native/etc/apk/keys/'
+          docker exec alpine-rv32 apk add -q --root /var/tmp/rv32-native --initdb --arch riscv32 --repository /work/.local/share/abuild/main alpine-baselayout busybox busybox-binsh apk-tools abuild build-base
+          docker exec alpine-rv32 sh -c 'echo /work/.local/share/abuild/main > /var/tmp/rv32-native/etc/apk/repositories'
+          docker exec alpine-rv32 tar -C /var/tmp/rv32-native -cf - . | docker import - rv32-native
+          docker run -d --name rv32-native -v "$PWD":/work -w /work rv32-native sleep infinity
+          docker exec rv32-native adduser -D -H -h /work -u "$(id -u)" builder
+          docker exec rv32-native addgroup builder abuild
+          docker exec -u builder rv32-native sh -c 'uname -m; gcc -dumpmachine; abuild-apk --version'
+
+      # Same timestamps rule as in the cross job
+      - name: Build natively
+        id: build
+        continue-on-error: true
+        timeout-minutes: 340
+        env:
+          BUDGET_MINUTES: ${{ inputs.budget-minutes }}
+        run: |
+          find .local/share/abuild -name '*.apk' -exec touch {} +
+          find .local/share/abuild -name APKINDEX.tar.gz -exec touch {} +
+          alpine-riscv32/ci/native-build.sh
+
+      - name: Stop the containers
+        if: always()
+        run: docker stop rv32-native alpine-rv32 || true
+
+      - name: Save downloaded sources
+        if: always()
+        uses: actions/cache/save@v5
+        with:
+          path: .cache/distfiles
+          key: distfiles-native-${{ github.run_id }}-${{ github.run_attempt }}-${{ inputs.part }}
+
+      # Replaces the artifact it started from, so the next part, pages and
+      # release take the newest. Not when the build step never ran: the
+      # artifact it started from stays then, and it is complete.
+      - name: Hand the repository to the next job
+        id: upload
+        if: ${{ !cancelled() && steps.build.outcome != 'skipped' }}
+        uses: actions/upload-artifact@v6
+        with:
+          name: repo
+          path: .local/share/abuild/
+          include-hidden-files: true
+          compression-level: 0
+          retention-days: 7
+          overwrite: true
+
+      - name: Fail if a package failed
+        if: steps.build.outcome != 'success'
+        run: exit 1

@@ -10,8 +10,8 @@
 #
 # The private key comes from the ABUILD_PRIVKEY environment variable (a
 # repository secret). Without it, a run on a branch other than main makes a
-# temporary key (or reuses the one the cross job handed over); main refuses,
-# because what main builds gets published.
+# temporary key (or reuses the one the cross job handed over); main and
+# tags refuse, because what they build gets published.
 
 set -euo pipefail
 
@@ -36,7 +36,7 @@ temporary=true
 if [ -n "${ABUILD_PRIVKEY:-}" ]; then
 	(umask 077; printf '%s\n' "$ABUILD_PRIVKEY" > "$keydir/$keyname")
 	temporary=false
-elif [ "${GITHUB_REF:-}" = refs/heads/main ]; then
+elif [ "${GITHUB_REF:-}" = refs/heads/main ] || [ "${GITHUB_REF_TYPE:-}" = tag ]; then
 	echo "::error::The repository secret ABUILD_PRIVKEY is not set; see docs/steps/23-package-ci.md, section 1"
 	exit 1
 elif [ -f "$keydir/$keyname" ]; then
