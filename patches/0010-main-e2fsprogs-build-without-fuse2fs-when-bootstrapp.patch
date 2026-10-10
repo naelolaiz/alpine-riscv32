@@ -1,0 +1,50 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: naelolaiz <1333555+naelolaiz@users.noreply.github.com>
+Date: Wed, 7 Oct 2026 23:34:16 +0000
+Subject: [PATCH 10/10] main/e2fsprogs: build without fuse2fs when
+ bootstrapping
+
+With BOOTSTRAP or APORTS_BOOTSTRAP set, leave out fuse3-dev and the
+fuse2fs subpackages. fuse3 pulls in eudev, glib, gobject-introspection
+and cairo, about 90 source packages on a new architecture. configure
+builds fuse2fs only when it finds fuse, so nothing else changes; the
+rest of e2fsprogs (mke2fs, e2fsck, the libraries mc links for ext2
+attributes) builds as before.
+
+Without the variables the APKBUILD builds exactly what it built before.
+Generic, not specific to riscv32.
+---
+ main/e2fsprogs/APKBUILD | 12 +++++++++---
+ 1 file changed, 9 insertions(+), 3 deletions(-)
+
+diff --git a/main/e2fsprogs/APKBUILD b/main/e2fsprogs/APKBUILD
+index 543229bb5e4..7e825813d93 100644
+--- a/main/e2fsprogs/APKBUILD
++++ b/main/e2fsprogs/APKBUILD
+@@ -8,14 +8,20 @@ url="https://e2fsprogs.sourceforge.net/"
+ arch="all"
+ license="GPL-2.0-or-later AND LGPL-2.0-or-later AND BSD-3-Clause AND MIT"
+ depends_dev="util-linux-dev gawk"
+-makedepends="$depends_dev linux-headers fuse3-dev"
++makedepends="$depends_dev linux-headers"
+ checkdepends="diffutils perl coreutils"
+ subpackages="
+ 	$pkgname-static
+ 	$pkgname-dev
+ 	libcom_err
+-	fuse2fs
+-	fuse2fs-doc:fuse2fs_doc:noarch
++	"
++if [ -z "$BOOTSTRAP" ] && [ -z "$APORTS_BOOTSTRAP" ]; then
++	# fuse3 pulls in eudev, glib and gobject-introspection;
++	# configure builds fuse2fs only when it finds fuse
++	makedepends="$makedepends fuse3-dev"
++	subpackages="$subpackages fuse2fs fuse2fs-doc:fuse2fs_doc:noarch"
++fi
++subpackages="$subpackages
+ 	$pkgname-doc
+ 	$pkgname-libs
+ 	$pkgname-extra
+-- 
+2.43.0
+

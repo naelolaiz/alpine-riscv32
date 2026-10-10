@@ -1,0 +1,65 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: naelolaiz <1333555+naelolaiz@users.noreply.github.com>
+Date: Wed, 7 Oct 2026 23:12:40 +0000
+Subject: [PATCH 07/10] community/vim: skip gvim and script interfaces when
+ bootstrapping
+
+With BOOTSTRAP or APORTS_BOOTSTRAP set, build vim with ncurses only:
+no gvim and no Lua, Perl, Python, Ruby or Tcl interfaces. gvim pulls in
+gtk+3.0 and X11, and ruby-dev alone pulls in rust and llvm, more than 250
+source packages on a new architecture before vim can build. The
+interfaces are loaded at run time and vim's configure leaves them off
+when the flags are not given.
+
+Without the variables the APKBUILD builds exactly what it built before.
+Generic, not specific to riscv32.
+---
+ community/vim/APKBUILD | 25 ++++++++++++-------------
+ 1 file changed, 12 insertions(+), 13 deletions(-)
+
+diff --git a/community/vim/APKBUILD b/community/vim/APKBUILD
+index 951ea99c91b..44b0255c5f8 100644
+--- a/community/vim/APKBUILD
++++ b/community/vim/APKBUILD
+@@ -12,14 +12,17 @@ arch="all"
+ license="Vim"
+ options="!check"  # some tests are failing
+ _luaver=5.5
+-makedepends="
+-	lua$_luaver-dev
+-	ncurses-dev
+-	perl-dev
+-	python3-dev
+-	ruby-dev
+-	tcl-dev
+-	"
++makedepends="ncurses-dev"
++if [ -z "$BOOTSTRAP" ] && [ -z "$APORTS_BOOTSTRAP" ]; then
++	# script interfaces, loaded at run time; ruby alone pulls in rust and llvm
++	makedepends="$makedepends lua$_luaver-dev perl-dev python3-dev ruby-dev tcl-dev"
++	_interp_config="--enable-luainterp=dynamic --enable-perlinterp=dynamic
++		--enable-python3interp=dynamic --enable-rubyinterp=dynamic
++		--enable-tclinterp=dynamic"
++else
++	# gvim pulls in gtk+3.0 and X11
++	: "${BUILD_GVIM:=false}"
++fi
+ subpackages="
+ 	$pkgname-doc
+ 	${pkgname}diff::noarch
+@@ -301,11 +304,7 @@ _build() {
+ 		--build=$CBUILD \
+ 		--host=$CHOST \
+ 		--prefix=/usr \
+-		--enable-luainterp=dynamic \
+-		--enable-perlinterp=dynamic \
+-		--enable-python3interp=dynamic \
+-		--enable-rubyinterp=dynamic \
+-		--enable-tclinterp=dynamic \
++		$_interp_config \
+ 		--disable-nls \
+ 		--enable-acl \
+ 		--enable-multibyte \
+-- 
+2.43.0
+

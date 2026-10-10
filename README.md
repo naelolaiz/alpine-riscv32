@@ -17,12 +17,15 @@ result should also run on QEMU, LiteX or any other RV32 Linux system.
 
 ## Status
 
-The six patches in `patches/` are enough to cross-build Alpine's bootstrap
+The first six patches in `patches/` are enough to cross-build Alpine's bootstrap
 list for riscv32 (156 packages, alpine-base included) and to boot it under
 `qemu-system-riscv32 -M virt` with mainline Linux 6.18 (`rv32_defconfig`) to
 an OpenRC login, with `apk add` working inside the VM. Beyond that list,
 packages build natively in a riscv32 container run through qemu-user:
 dropbear and nano so far, with dropbear accepting SSH logins in the VM.
+Patches 0007 to 0010 trim optional dependencies when bootstrapping, and 0011
+keeps utmps in util-linux's bootstrap build, so that python3, htop, vim,
+neofetch and mc build natively too (47 source packages).
 Per-package details are
 in [`RISCV32.md`](RISCV32.md); the steps are in [`docs/steps/`](docs/steps/).
 

@@ -1,0 +1,37 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: naelolaiz <1333555+naelolaiz@users.noreply.github.com>
+Date: Wed, 7 Oct 2026 23:19:05 +0000
+Subject: [PATCH 08/10] main/htop: build without lm-sensors when bootstrapping
+
+With BOOTSTRAP or APORTS_BOOTSTRAP set, leave out lm-sensors-dev, whose
+package pulls in rrdtool, cairo and pango. htop's configure defaults
+--enable-sensors to "check" and turns the feature off when
+sensors/sensors.h is missing; htop loads libsensors with dlopen at run
+time and only needs the header to build.
+
+Without the variables the APKBUILD builds exactly what it built before.
+Generic, not specific to riscv32.
+---
+ main/htop/APKBUILD | 6 +++++-
+ 1 file changed, 5 insertions(+), 1 deletion(-)
+
+diff --git a/main/htop/APKBUILD b/main/htop/APKBUILD
+index 6c1cf839e32..ef32a915c11 100644
+--- a/main/htop/APKBUILD
++++ b/main/htop/APKBUILD
+@@ -13,7 +13,11 @@ license="GPL-2.0-or-later"
+ # Without this dependency, this screen doesn't emit an error
+ # as busybox provides lsof but its output format is incompatible.
+ depends="lsof"
+-makedepends="ncurses-dev linux-headers lm-sensors-dev"
++makedepends="ncurses-dev linux-headers"
++if [ -z "$BOOTSTRAP" ] && [ -z "$APORTS_BOOTSTRAP" ]; then
++	# lm-sensors pulls in rrdtool, cairo and pango
++	makedepends="$makedepends lm-sensors-dev"
++fi
+ subpackages="$pkgname-doc"
+ source="https://github.com/htop-dev/htop/releases/download/$pkgver/htop-$pkgver.tar.xz"
+ options="!check" # no upstream/available test-suite
+-- 
+2.43.0
+

@@ -51,8 +51,8 @@ Python modules. Most of that weight is documentation and optional features.
 This step builds nano and dropbear (14 source packages), because Phase 4 needs
 an SSH server (step 17) and nano is the smallest real test of the
 environment. The other six come later, after trimming what they pull in
-(section 8). vim, htop, neofetch, mc and fastfetch are parked until after
-Wi-Fi; section 8 keeps what they need.
+(section 8). Section 8 also builds vim, htop, mc, python3 and neofetch;
+fastfetch is parked.
 
 ## 1. Let setuid programs work through binfmt_misc
 
@@ -361,44 +361,66 @@ The other six are not needed to boot Alpine on the board:
 - apk fetches over HTTP with its own code, so step 15 can test with
   `apk add nano` instead of curl.
 - Without e2fsprogs there is no `fsck.ext4`, so the pendrive root gets
-  `0` in the `fstab` pass field until it exists.
+  `0` in the `fstab` pass field until it exists. The subsection below
+  builds it on the way to mc.
 
 Before building them, the APKBUILDs can drop what is only documentation or an
-optional feature when `BOOTSTRAP` is set, as the parked vim and htop edits
-below do.
-Candidates: cmake's sphinx manual, e2fsprogs' `fuse2fs`, elfutils'
-debuginfod (which needs curl), and gdbserver built on its own instead of the
-full gdb. Each such change would be one generic patch in `patches/`.
+optional feature when `BOOTSTRAP` or `APORTS_BOOTSTRAP` is set, as the edits
+below do for vim, htop, glib and e2fsprogs. Other candidates: cmake's sphinx
+manual, elfutils' debuginfod (which needs curl), and gdbserver built on its
+own instead of the full gdb. Each such change is one generic patch in
+`patches/`.
 
-### Parked until after Wi-Fi: mc and fastfetch
+### vim, htop, mc, python3 and neofetch
 
-| Package | Not yet built, with edits | Why |
-| --- | --- | --- |
-| fastfetch | about 15 | cmake (without its sphinx manual) and yyjson; fastfetch's GPU, X11, Wayland, audio and image libraries are optional |
-| mc | about 38 | mc needs glib, glib builds with meson, and meson is a python3 program; mc's gpm mouse and ext2 attributes, glib's man pages and libmount are optional |
+These five build with four edits, patches 0007 to 0010, and one fix, patch
+0011. Counted as in the
+table at the top, on top of what sections 5 and 6 built:
 
-
-### Parked until after Wi-Fi: vim, htop and neofetch
-
-Two of these pull in far more than they need. One small edit each brings
-them down:
-
-| Package | Not yet built, as is | With the edit | What the edit drops |
+| Package | Not yet built, as is | With the edits | What the edits drop |
 | --- | --- | --- | --- |
-| vim | 266 | 1 | gvim (gtk+3.0, X11) and the Lua, Perl, Python, Ruby and Tcl script interfaces; ruby alone pulls in rust and llvm |
-| htop | 136 | 8 | temperature readings through lm-sensors, whose package pulls in rrdtool, cairo and pango |
-| neofetch | 1 after bash | no edit | nothing: it is a bash script in `testing/` |
+| python3 | 14 | 14 | nothing, no edit needed |
+| htop | 136 | 8 | temperature readings through lm-sensors, whose package pulls in rrdtool, cairo and pango (0008) |
+| vim | 272 | 1 | gvim (gtk+3.0, X11) and the Lua, Perl, Python, Ruby and Tcl script interfaces; ruby alone pulls in rust and llvm (0007) |
+| neofetch | 1 after bash | 1 after bash | nothing: it is a bash script in `testing/` |
+| mc | 123 | 26 after the above | `fuse2fs` in e2fsprogs, whose fuse3 pulls in eudev, glib's introspection chain and cairo (0010); glib's man pages and DocBook tools (0009) |
 
-The 8 for htop are bison, help2man, flex, chrpath, readline, bash, lsof and
-htop: htop's `depends` is lsof, whose `makedepends` has bash. Counted as in
-the table at the top.
+All five together are 47 source packages. mc keeps its ext2 attribute
+support, so e2fsprogs gets built along the way, `fsck.ext4` included.
+fastfetch stays parked: about 15 packages (cmake without its sphinx manual,
+yyjson).
 
-Both edits only apply when `BOOTSTRAP` or `APORTS_BOOTSTRAP` is set, the
+All four edits only apply when `BOOTSTRAP` or `APORTS_BOOTSTRAP` is set, the
 convention util-linux, curl and openssh already use. Without those variables
 the APKBUILDs build exactly what they build today, so the edits are generic
 and can go upstream.
 
-#### Edit 1: vim
+#### Apply the patches
+
+HOST, in the directory holding `aports` and `alpine-riscv32`. `git am`
+applies each patch and commits it with its author and message, so `aports`
+gets one commit per package, as in aports. `$PWD` is needed because `-C
+aports` makes git resolve paths from inside `aports`:
+
+```sh
+git -C aports am "$PWD"/alpine-riscv32/patches/000[789]-*.patch "$PWD"/alpine-riscv32/patches/001[01]-*.patch
+git -C aports log --oneline -5
+```
+
+The log shows the five commits on top of the busybox one (0006). If `am`
+stops at 0007 or 0008 because those edits are already in the tree,
+`git -C aports am --abort` and apply only 0009 to 0011.
+
+If 0007 to 0010 are already applied (0011 came later), apply only the new one,
+from the same directory:
+
+```sh
+git -C aports am "$PWD"/alpine-riscv32/patches/0011-*.patch
+```
+
+The five subsections below show what each patch changes and why.
+
+#### Edit 1: vim (patch 0007)
 
 `aports/community/vim/APKBUILD:15`, the dependency list:
 
@@ -444,7 +466,7 @@ and can go upstream.
   it splits into the five flags. Without them, vim's `configure` leaves the
   interfaces off.
 
-#### Edit 2: htop
+#### Edit 2: htop (patch 0008)
 
 `aports/main/htop/APKBUILD:16`:
 
@@ -461,68 +483,269 @@ htop's `configure.ac` defaults `--enable-sensors` to `check`: without
 `sensors/sensors.h` it turns the feature off instead of failing. htop loads
 libsensors with `dlopen` at run time and only needs the header to build.
 
-#### Check and commit
+#### Edit 3: glib (patch 0009)
 
-CONTAINER (either one), so both edits parse and switch as intended. Each line
-prints `makedepends` and the subpackages; with the variable set, vim lists only
-`ncurses-dev` and no `gvim`, and htop has no `lm-sensors-dev`:
+mc needs glib. `aports/main/glib/APKBUILD:13` to `:107`, three hunks:
 
-```sh
-cd /work/aports/community/vim
-sh -c '. ./APKBUILD; echo $makedepends; echo $subpackages'
-APORTS_BOOTSTRAP=1 sh -c '. ./APKBUILD; echo $makedepends; echo $subpackages'
-cd /work/aports/main/htop
-APORTS_BOOTSTRAP=1 sh -c '. ./APKBUILD; echo $makedepends'
+```diff
+@@ -13,14 +13,20 @@ license="LGPL-2.1-or-later"
+ triggers="$pkgname.trigger=/usr/share/glib-2.0/schemas:/usr/lib/gio/modules:/usr/lib/gtk-4.0"
+ depends_dev="
+ 	bzip2-dev
+-	docbook-xml
+-	docbook-xsl
+ 	gettext-dev
+-	libxml2-utils
+-	libxslt
+ 	python3
+ 	py3-packaging
+ 	"
++subpackages="$pkgname-dbg"
++_man_pages=disabled
++if [ -z "$BOOTSTRAP" ] && [ -z "$APORTS_BOOTSTRAP" ]; then
++	# man pages (rst2man) and the DocBook tools; these pull in libxml2,
++	# libxslt, libgcrypt and py3-docutils
++	depends_dev="$depends_dev docbook-xml docbook-xsl libxml2-utils libxslt"
++	_docdepends="py3-docutils"
++	subpackages="$subpackages $pkgname-doc"
++	_man_pages=enabled
++fi
+ makedepends="$depends_dev
+ 	bash
+ 	bison
+@@ -32,11 +38,9 @@ makedepends="$depends_dev
+ 	python3-dev
+ 	util-linux-dev
+ 	zlib-dev
+-	py3-docutils
++	$_docdepends
+ 	"
+-subpackages="
+-	$pkgname-dbg
+-	$pkgname-doc
++subpackages="$subpackages
+ 	$pkgname-static
+ 	$pkgname-dev
+ 	$pkgname-lang
+@@ -101,7 +105,7 @@ build() {
+ 		--reconfigure \
+ 		--pkg-config-path="$_prefix"/lib/pkgconfig \
+ 		--default-library=both \
+-		-Dman-pages=enabled \
++		-Dman-pages=$_man_pages \
+ 		-Dlibmount=enabled \
+ 		-Dtests="$(want_check && echo true || echo false)" \
+ 		-Dintrospection=enabled \
 ```
 
-HOST, in the directory holding `aports`. One commit per package, as in
-aports, so each becomes one patch in the series:
+- glib 2.90 builds its man pages with `rst2man` (py3-docutils) only; see
+  `find_program('rst2man' ...)` in glib's top `meson.build`. The DocBook
+  tools in `depends_dev` are not used by glib's own build, so they stay for
+  `glib-dev` users when not bootstrapping. Together they pull in libxslt,
+  libgcrypt, libgpg-error and the docutils chain.
+- Without man pages `glib-doc` would be empty, and abuild stops with
+  `Missing subpkgdir for glib-doc` on an empty subpackage
+  (`prepare_package()` in `/usr/bin/abuild`), so the subpackage goes too.
+- `subpackages` is built in pieces so `glib-doc` keeps its place after
+  `glib-dbg` in a normal build; the split functions run in that order.
+
+#### Edit 4: e2fsprogs (patch 0010)
+
+mc reads ext2 file attributes through e2fsprogs' libe2p. `aports/main/e2fsprogs/APKBUILD:11`:
+
+```diff
+@@ -8,14 +8,20 @@ url="https://e2fsprogs.sourceforge.net/"
+ arch="all"
+ license="GPL-2.0-or-later AND LGPL-2.0-or-later AND BSD-3-Clause AND MIT"
+ depends_dev="util-linux-dev gawk"
+-makedepends="$depends_dev linux-headers fuse3-dev"
++makedepends="$depends_dev linux-headers"
+ checkdepends="diffutils perl coreutils"
+ subpackages="
+ 	$pkgname-static
+ 	$pkgname-dev
+ 	libcom_err
+-	fuse2fs
+-	fuse2fs-doc:fuse2fs_doc:noarch
++	"
++if [ -z "$BOOTSTRAP" ] && [ -z "$APORTS_BOOTSTRAP" ]; then
++	# fuse3 pulls in eudev, glib and gobject-introspection;
++	# configure builds fuse2fs only when it finds fuse
++	makedepends="$makedepends fuse3-dev"
++	subpackages="$subpackages fuse2fs fuse2fs-doc:fuse2fs_doc:noarch"
++fi
++subpackages="$subpackages
+ 	$pkgname-doc
+ 	$pkgname-libs
+ 	$pkgname-extra
+```
+
+e2fsprogs' `configure.ac` (`AC_ARG_ENABLE([fuse2fs]`) looks for fuse when
+`--disable-fuse2fs` is not given and quietly skips fuse2fs when it finds
+none. The `fuse2fs` split function would then fail on the missing
+`usr/bin/fuse2fs`, so the two fuse2fs subpackages go with the dependency.
+
+#### Fix 5: util-linux keeps utmps (patch 0011)
+
+util-linux's own bootstrap gate dropped `utmps-dev` and the utmps compiler
+flags, and the build then stopped in `login-utils/last.c` with `'_PATH_WTMP'
+undeclared`. Alpine's musl removes `_PATH_UTMP` and `_PATH_WTMP` from
+`<paths.h>` (`main/musl/adjust-paths.patch`) because utmps' `<utmpx.h>` and
+util-linux's `utmps.patch` provide them, so util-linux needs utmps even
+when bootstrapping. utmps and its chain (skalibs, execline, s6) were built in
+section 6 for dropbear, so this adds no package. `aports/main/util-linux/APKBUILD:17`:
+
+```diff
+@@ -17,6 +17,8 @@ makedepends_host="
+ 	linux-headers
+ 	ncurses-dev
+ 	sqlite-dev
++	utmps-dev
++	utmps-static
+ 	zlib-dev
+ 	"
+ subpackages="
+@@ -59,8 +61,6 @@ if [ -z "$BOOTSTRAP" ] && [ -z "$APORTS_BOOTSTRAP" ]; then
+ 		linux-pam-dev
+ 		python3-dev
+ 		libeconf-dev
+-		utmps-dev
+-		utmps-static
+ 		"
+ 	subpackages="$subpackages
+ 		$pkgname-login
+@@ -148,14 +148,18 @@ prepare() {
+ }
+ 
+ build() {
++	# Linking utmps statically is strongly preferred by the utmps author
++	# and also much more space efficient - adds 4 kiB to each binary, that's
++	# 20 kiB in total for util-linux-*, versus 196 kiB (libskarnet.so).
++	# TODO: Find a better way (libutmps.so w/o dependency on libskarnet.so)?
++	# musl's <paths.h> on Alpine has no _PATH_UTMP and _PATH_WTMP, utmps
++	# provides them, so it is needed when bootstrapping too.
++	export CFLAGS="$CFLAGS $(pkg-config --cflags --static libutmps)"
++	export LDFLAGS="$LDFLAGS $(pkg-config --libs --static libutmps)"
+ 	if [ -z "$BOOTSTRAP" ]; then
+-		# Linking utmps statically is strongly preferred by the utmps author
+-		# and also much more space efficient - adds 4 kiB to each binary, that's
+-		# 20 kiB in total for util-linux-*, versus 196 kiB (libskarnet.so).
+-		# TODO: Find a better way (libutmps.so w/o dependency on libskarnet.so)?
+ 		# also throw in lto when not bootstrapping
+-		export CFLAGS="$CFLAGS -ffat-lto-objects -flto=auto $(pkg-config --cflags --static libutmps)"
+-		export LDFLAGS="$LDFLAGS $(pkg-config --libs --static libutmps) $(pkg-config --libs libeconf)"
++		export CFLAGS="$CFLAGS -ffat-lto-objects -flto=auto"
++		export LDFLAGS="$LDFLAGS $(pkg-config --libs libeconf)"
+ 	fi
+ 
+ 	# --disable-chfn-chsh - chfn and chsh are provided by shadow package
+```
+
+`pkg-config --cflags libutmps` adds `-I/usr/include/utmps`, so `<utmpx.h>`
+is utmps' header, and `utmps.patch` then defines `_PATH_WTMP`. Without the
+variables the full build gets the same flags as before, in another order.
+
+#### Check
+
+CONTAINER (either one). Each line prints `makedepends` and the subpackages;
+with the variable set, vim lists only `ncurses-dev` and no `gvim`, htop has no
+`lm-sensors-dev`, glib has no docbook, libxslt or py3-docutils and no
+`glib-doc`, e2fsprogs has no `fuse3-dev` and no `fuse2fs`, util-linux lists
+`utmps-dev utmps-static`:
 
 ```sh
-git -C aports add community/vim/APKBUILD
-git -C aports -c user.name=naelolaiz -c user.email=1333555+naelolaiz@users.noreply.github.com commit -m "community/vim: skip gvim and script interfaces when bootstrapping"
-git -C aports add main/htop/APKBUILD
-git -C aports -c user.name=naelolaiz -c user.email=1333555+naelolaiz@users.noreply.github.com commit -m "main/htop: build without lm-sensors when bootstrapping"
+cd /work/aports/community/vim && APORTS_BOOTSTRAP=1 sh -c '. ./APKBUILD; echo $makedepends; echo $subpackages'
+cd /work/aports/main/htop && APORTS_BOOTSTRAP=1 sh -c '. ./APKBUILD; echo $makedepends'
+cd /work/aports/main/glib && APORTS_BOOTSTRAP=1 sh -c '. ./APKBUILD; echo $makedepends; echo $subpackages'
+cd /work/aports/main/e2fsprogs && APORTS_BOOTSTRAP=1 sh -c '. ./APKBUILD; echo $makedepends; echo $subpackages'
+cd /work/aports/main/util-linux && APORTS_BOOTSTRAP=1 sh -c '. ./APKBUILD; echo $makedepends'
 ```
+
+Run the same five lines without `APORTS_BOOTSTRAP=1` to see the full lists
+come back.
 
 #### Sources
 
-bison, help2man, readline (3 patch files) and bash (9 patch files) download
-from `ftp.gnu.org`. Instead of one curl per file, let abuild try Alpine's
-distfiles first. When `DISTFILES_MIRROR` is set, abuild's `uri_fetch_mirror()`
-asks for `$DISTFILES_MIRROR/<file name>` and only falls back to the original
-URL if that fails. Alpine's server keeps exactly the files its builders
-checksummed (as with fakeroot in step 9), which also avoids the regenerated
-GitHub and Codeberg archive tarballs. HOST, same directory; both containers
-read this file, because `HOME` is `/work` in both:
+Several of these download from `ftp.gnu.org` (readline and bash with their
+patch files, diffutils, help2man, libtool, bison, gawk, libunistring,
+gettext), and gpm's home page is gone. Instead of one curl per file, let
+abuild try Alpine's distfiles first. When `DISTFILES_MIRROR` is set, abuild's
+`uri_fetch_mirror()` asks for `$DISTFILES_MIRROR/<file name>` and only falls
+back to the original URL if that fails. Alpine's server keeps exactly the
+files its builders checksummed (as with fakeroot in step 9), which also
+avoids the regenerated GitHub and Codeberg archive tarballs. HOST, same
+directory; both containers read this file, because `HOME` is `/work` in both.
+`grep -q` succeeds when the line is already there, so `||` only appends it
+once:
 
 ```sh
-echo 'DISTFILES_MIRROR=https://distfiles.alpinelinux.org/distfiles/edge' >> .config/abuild/abuild.conf
+grep -q '^DISTFILES_MIRROR=' .config/abuild/abuild.conf || echo 'DISTFILES_MIRROR=https://distfiles.alpinelinux.org/distfiles/edge' >> .config/abuild/abuild.conf
 ```
 
-CONTAINER `alpine-rv32`, as your user:
+CONTAINER `alpine-rv32`, as your user. The list is the build order below, all
+three groups in one go:
 
 ```sh
 cd /work/aports
-for p in main/bison main/help2man main/flex main/chrpath main/readline main/bash main/lsof main/htop community/vim testing/neofetch; do (cd $p && abuild fetch verify) || break; done
+for p in main/expat main/bluez-headers main/libffi main/mpdecimal main/chrpath main/readline main/sqlite main/tcl main/diffutils main/help2man main/libtool main/gettext-tiny main/xz main/python3 main/bison main/flex main/bash main/lsof main/htop community/vim testing/neofetch main/libedit main/pcre2 main/swig main/libcap-ng main/util-linux main/gawk main/e2fsprogs main/libxml2 main/libunistring main/gettext main/py3-installer main/py3-flit-core main/py3-gpep517 main/py3-parsing main/py3-packaging main/samurai main/py3-setuptools main/py3-wheel main/meson main/glib main/libssh2 main/libpng main/oniguruma main/slang main/gpm main/mc; do (cd $p && abuild fetch verify) || break; done
 ```
 
 #### Build
 
-CONTAINER `rv32-native`, as your user. `APORTS_BOOTSTRAP=1` switches on the
-two edits; `ABUILD_BOOTSTRAP=1` skips the tests as in section 6.
+First, OpenSSL again, natively. Its APKBUILD adds `no-threads` whenever
+`CBUILD` and `CHOST` differ (its comment: libatomic is not available when
+cross building), so the libcrypto3 and libssl3 from step 9 have no thread
+support, and python3's `_ssl` and `_hashopenssl` stop with `OPENSSL_THREADS
+is not defined, Python requires thread-safe OpenSSL`. Alpine's own
+bootstrap rebuilds openssl natively for the same reason. CONTAINER
+`rv32-native`, as your user:
+
+```sh
+export ABUILD_BOOTSTRAP=1 APORTS_BOOTSTRAP=1
+cd /work/aports/main/openssl && abuild -rf
+abuild-apk fix libcrypto3 libssl3
+tar -xzOf /work/.local/share/abuild/main/riscv32/openssl-dev-3.5.9-r*.apk usr/include/openssl/configuration.h 2>/dev/null | grep THREADS
+```
+
+- `-f` forces the build: the package from step 9 has the same version, so
+  abuild would otherwise call it up to date.
+- `abuild-apk fix` reinstalls the two libraries in the container from the
+  new packages; with the same version number apk would not replace them on
+  its own. The board needs the same `apk fix` once it gets the new packages.
+- The last line prints `OPENSSL_THREADS` and no `OPENSSL_NO_THREADS`.
+
+Then the three groups. `APORTS_BOOTSTRAP=1` switches on the
+four edits, and the gate util-linux already has (no PAM, Python bindings or
+`login`; utmps stays, patch 0011); `ABUILD_BOOTSTRAP=1` skips the tests as in section 6. Three groups,
+so each target is usable as soon as its group is done:
 
 ```sh
 export ABUILD_BOOTSTRAP=1 APORTS_BOOTSTRAP=1
 cd /work/aports
-for p in main/bison main/help2man main/flex main/chrpath main/readline main/bash main/lsof main/htop community/vim testing/neofetch; do (cd $p && abuild -r) || break; done
+for p in main/expat main/bluez-headers main/libffi main/mpdecimal main/chrpath main/readline main/sqlite main/tcl main/diffutils main/help2man main/libtool main/gettext-tiny main/xz main/python3; do (cd $p && abuild -r) || break; done
+for p in main/bison main/flex main/bash main/lsof main/htop community/vim testing/neofetch; do (cd $p && abuild -r) || break; done
+for p in main/libedit main/pcre2 main/swig main/libcap-ng main/util-linux main/gawk main/e2fsprogs main/libxml2 main/libunistring main/gettext main/py3-installer main/py3-flit-core main/py3-gpep517 main/py3-parsing main/py3-packaging main/samurai main/py3-setuptools main/py3-wheel main/meson main/glib main/libssh2 main/libpng main/oniguruma main/slang main/gpm main/mc; do (cd $p && abuild -r) || break; done
 ```
 
-The order follows the dependencies: bison and help2man before flex (its
-`makedepends`), readline before bash, bash before lsof, lsof before htop
-(`abuild -r` also installs `depends`), bash before neofetch. abuild takes the
-repository name from the APKBUILD's parent directory, so vim lands in
-`community/riscv32` and neofetch in `testing/riscv32` next to `main/riscv32`.
+- Group 1 is python3 and its libraries. libtool and xz come before python3
+  because xz runs `autoreconf` with libtool; diffutils and help2man are
+  libtool's `depends` and `makedepends`.
+- python3 is the longest single build: `--enable-optimizations` builds the
+  interpreter, runs part of its test suite to collect a profile, and builds
+  it again with that profile, all under emulation. Failing tests in the
+  profile run do not stop the build (`|| true` in Python's `Makefile`).
+- Group 2: bison and flex before bash (its `makedepends`), bash before lsof,
+  lsof before htop (`abuild -r` also installs `depends`), bash before
+  neofetch.
+- Group 3 is mc's chain: util-linux (libmount for glib, libuuid and libblkid
+  for e2fsprogs) needs libcap-ng, whose Python bindings need swig, and
+  utmps from section 6; glib
+  builds with meson, a python3 program, which needs the `py3-` build tools
+  first.
+- abuild takes the repository name from the APKBUILD's parent directory, so
+  vim lands in `community/riscv32` and neofetch in `testing/riscv32` next to
+  `main/riscv32`. neofetch is `noarch`; abuild still files it under the
+  build architecture.
 
 Done when: nano and dropbear are built in `rv32-native`, and `ssh` into the
 QEMU machine prints `riscv32`.
