@@ -30,6 +30,14 @@ neofetch and mc build natively too (47 source packages).
 Per-package details are
 in [`RISCV32.md`](RISCV32.md); the steps are in [`docs/steps/`](docs/steps/).
 
+## Packages
+
+Built packages are published as GitHub releases. The latest is
+[packages-2026-10-10](https://github.com/naelolaiz/alpine-riscv32/releases/tag/packages-2026-10-10):
+the main, community and testing repositories for riscv32 in one archive, plus
+the public key that signs them. The release notes list the natively built
+packages and show how to install them on a board.
+
 ## Approach
 
 Patches live here as a series against a pinned
