@@ -28,7 +28,7 @@ A push starts by downloading everything published: the Pages site plus the
 newest `packages-*` release. abuild skips a package whose `.apk` files
 already exist, so the run builds only what is new or changed: a new line
 in the list, or a new `pkgver` or `pkgrel`. A run with nothing to build
-takes about 15 minutes, mostly setting up the machines; one new package
+takes about 7 minutes, mostly setting up the machines; one new package
 adds its own build time.
 
 A tag starts from an empty repository instead, so a release is one clean
@@ -406,10 +406,17 @@ cache (148 MB). Starting from Pages alone, it went on to build openssl and
 the python3 chain again, which the first release already had; that is
 why a run now adds the newest release on top.
 
+Branch run 38085779881 (2026-10-10), with the release added on top:
+Pages' 233 files plus packages-2026-10-10 made 458 packages; the release
+replaced the cross-built openssl and added the rest, and the indexes of
+main, community and testing were written again (apk index warns about
+dependencies that live in another repository, as it does on the PC).
+Every key was trusted, the cross job found everything up to date, and
+`native-1` found all 62 packages up to date, openssl included, so
+`native-2` to `native-4` did not run. The whole run took 7 minutes.
+
 Not tested yet:
 
-- Adding the release on top of Pages, with the new indexes and the mixed
-  keys: the next run, on this branch or on main, does that.
 - Several native parts in a row, and a tag run with the `release` job.
 - Installing from the site on the board.
 - How long python3 takes on the runners: the first release has it, so no run
