@@ -2,12 +2,13 @@
 
 Steps 8, 9 and 11 build every package on the PC. The workflow in
 [`.github/workflows/packages.yml`](../../.github/workflows/packages.yml) does
-the same on GitHub's machines and publishes the result as an apk repository
-on GitHub Pages after every run on main. When you ask for one, it also
-publishes the repository as a GitHub release, a dated snapshot like the
-first one, packages-2026-10-10, which was built on the PC and packed by hand. Adding a package
-then means adding one line (and a patch, if its APKBUILD needs an edit) and
-pushing.
+the same on GitHub's machines. A push builds only what is new or changed
+and, on main, publishes the result as an apk repository on GitHub Pages. A
+pushed `packages-*` tag builds everything from scratch and publishes it as
+the GitHub release of that tag, a dated snapshot like the first one,
+packages-2026-10-10, which was built on the PC and packed by hand. Adding a
+package means adding one line (and a patch, if its APKBUILD needs an edit)
+and pushing; only that package is built.
 
 It works because a GitHub-hosted runner is an x86_64 Ubuntu virtual machine
 where the workflow has root through `sudo` and Docker: the same containers
@@ -19,15 +20,20 @@ cost nothing; each job may run for at most 6 hours.
 | Job | PC equivalent | What it does |
 | --- | --- | --- |
 | `cross` | steps 7 to 9 | aports at `aports.commit` plus `patches/`, `bootstrap.sh riscv32`, then `bootstrap.sh riscv32 mdev-conf` |
-| `native` | step 11 | a riscv32 container from those packages; `abuild -r` for every line of [`ci/native-packages.txt`](../../ci/native-packages.txt) |
-| `pages` | step 15's `http.server` | the riscv32 part of the repository directory, as it is on the PC under `.local/share/abuild`, published on GitHub Pages; main only, every run |
-| `release` | packing the release by hand | the same directories as one archive in a GitHub release, with the keys and `packages.txt`; main only, and only when you start the run with "release" ticked |
+| `native-1` to `native-4` | step 11 | a riscv32 container from those packages; `abuild -r` for every line of [`ci/native-packages.txt`](../../ci/native-packages.txt). A part runs only if the one before ran out of time |
+| `pages` | step 15's `http.server` | the riscv32 part of the repository directory, as it is on the PC under `.local/share/abuild`, published on GitHub Pages; main only |
+| `release` | packing the release by hand | the same directories as one archive in a GitHub release, with the keys and `packages.txt`; `packages-*` tags only |
 
-Every run starts by downloading what is published: the Pages site, or,
-while it has nothing yet, the newest `packages-*` release (the one built
-on the PC, the first time). abuild skips a package whose `.apk` files already exist, so a
-run only builds what is new or changed. Starting from scratch takes hours;
-a run that changes one package takes minutes plus that package.
+A push starts by downloading everything published: the Pages site plus the
+newest `packages-*` release. abuild skips a package whose `.apk` files
+already exist, so the run builds only what is new or changed: a new line
+in the list, or a new `pkgver` or `pkgrel`. A run with nothing to build
+takes about 15 minutes, mostly setting up the machines; one new package
+adds its own build time.
+
+A tag starts from an empty repository instead, so a release is one clean
+build of everything at that commit. That takes many hours, which is why
+the native builds may continue over up to four jobs of 6 hours each.
 
 ## 1. One-time setup
 
@@ -80,20 +86,45 @@ on the first run on main.
 Releases need no setting: the `release` job may create them because the
 workflow gives it `contents: write`.
 
+The secret is needed for tags as for main: without it, a tag run stops at
+once, because its packages would be signed by a key no board trusts.
+
 ## 2. Run it
 
 Push to main any change under `aports.commit`, `patches/`, `ci/` or the
-workflow file, or start it by hand: Actions tab, riscv32 packages, Run
-workflow. Each step's log is on the run page; the `native` job's summary
+workflow files, or start it by hand: Actions tab, riscv32 packages, Run
+workflow. Each step's log is on the run page; each native part's summary
 lists every package with its build time, the failures, and any package
-left for the next run.
+left for the next part.
 
-To make a release: Actions tab, riscv32 packages, Run workflow, branch
-main, tick "release". The run builds whatever is missing, updates Pages,
-and then publishes the release, but only if both build jobs are green and
-no package was left for a later run, so a release is always a complete
-build. When nothing changed since the newest release (same `packages.txt`),
-the `release` job says so in its summary and publishes nothing.
+### Making a release
+
+HOST, in your clone of alpine-riscv32, on the commit to release (usually
+main after a pull). The tag name becomes the release name; use the date,
+and a suffix for a second release on one day:
+
+```sh
+git switch main
+git pull
+git tag packages-2026-10-17
+git push origin packages-2026-10-17
+```
+
+- `git tag` without `-a` makes a lightweight tag, a name for the commit;
+  the release notes are written by the workflow.
+- The push starts the run: the `tag` job checks that no release of that
+  name exists, then everything is built from scratch, and the `release`
+  job publishes the release, but only if every package was built. If one
+  failed, or four native parts were not enough, there is no release, the
+  run's summary says why, and the tag stays: delete it
+  (`git push origin :refs/tags/packages-2026-10-17`, then
+  `git tag -d packages-2026-10-17`) before pushing it again.
+- A tag run does not update Pages; the next push to main carries on from
+  Pages plus this release.
+
+A release made by hand on the Releases page also creates its tag. The
+`tag` job sees that the release exists and the run builds nothing; the
+next push to main picks up its packages.
 
 ## 3. How it works, step by step
 
@@ -101,7 +132,7 @@ The workspace looks like the directory on the PC that holds `aports` and
 the repositories, and it is mounted at `/work` in every container, so the
 paths in the logs are the ones from steps 7 to 11.
 
-### Prepare (`ci/prepare.sh`, both build jobs)
+### Prepare (`ci/prepare.sh`, every build job)
 
 - **aports**: `git fetch --depth 1` of the pinned commit, then `git am` of
   `patches/`. A shallow fetch downloads one tree instead of aports' whole
@@ -132,22 +163,32 @@ abuild still checks their sha512.
 
 ### Published packages (`ci/fetch-published.sh`)
 
-Downloads every file listed in the published `files.txt` into
-`.local/share/abuild`. While the site has nothing (`files.txt` answers
-404), it unpacks the archive of the newest `packages-*` release there
-instead, so the first run on main continues from the release built on the
-PC rather than from scratch. Any other error stops the run, because
-going on would rebuild everything and deploy a smaller repository over the
-old one.
+Not for a tag. In this order:
 
-The keys come along. A package that is carried over keeps the signature it
-was made with, so the repository mixes keys: the PC's (`-6ac57722.rsa.pub`)
-for what was built on the PC, `alpine-riscv32-ci.rsa.pub` for what the
-workflow builds. apk checks every package's own signature, not just the
-index's, so the step copies every key into `/etc/apk/keys` of
-`alpine-rv32` (`bootstrap.sh` copies that directory into its sysroot), and
-the native job puts them into the riscv32 container. The board needs both
-keys too, and both are published.
+1. Every file listed in the published `files.txt` goes into
+   `.local/share/abuild`. If the site has nothing yet (`files.txt` answers
+   404), this part is skipped. Any other error stops the run, because
+   going on would rebuild everything and deploy a smaller repository over
+   the old one.
+2. The archive of the newest `packages-*` release is unpacked next to it,
+   and each `.apk` that is missing or differs is copied over. Where both
+   have a file of the same name, the release's wins: it is the build
+   someone chose to publish. This is how a release built on the PC (the
+   first one, with the natively built openssl, python3, htop, vim, mc and
+   neofetch) reaches Pages without being built again.
+3. The keys come along. A package that is carried over keeps the signature
+   it was made with, so the repository mixes keys: the PC's
+   (`-6ac57722.rsa.pub`) for what was built on the PC,
+   `alpine-riscv32-ci.rsa.pub` for what the workflow builds. apk checks
+   every package's own signature, not just the index's, so every key goes
+   into `/etc/apk/keys` of `alpine-rv32` (`bootstrap.sh` copies that
+   directory into its sysroot), and the native jobs put them into the
+   riscv32 container. The board needs both keys too, and both are
+   published.
+4. Where the release added or replaced packages, the directory's
+   `APKINDEX.tar.gz` no longer lists what is there, so the script writes a
+   new one the way abuild does after a build: `apk index`, then
+   `abuild-sign` with the workflow's key.
 
 Then abuild's own test decides what to build: a package is up to date
 when all its `.apk` files exist, none of its sources or its APKBUILD is
@@ -166,7 +207,8 @@ neither Pages nor the releases carry it; `actions/cache` keeps it instead.
 Its key is a hash of the binutils, gcc and build-base directories in
 aports, so a change to one of them builds it again (about an hour). If
 GitHub drops the cache (after 7 days unused, or when the repository's
-caches pass 10 GB), the next run builds it again as well.
+caches pass 10 GB), the next run builds it again as well. A tag run does
+not use the cache: a release is built from scratch.
 
 ### Cross job
 
@@ -174,7 +216,13 @@ caches pass 10 GB), the next run builds it again as well.
 which its list lacks (step 9, section 4). On a later run every package is
 up to date and both calls take a minute.
 
-### Native job
+### Native jobs
+
+The steps live in [`native.yml`](../../.github/workflows/native.yml), a
+workflow that `packages.yml` calls up to four times in a row (`native-1`
+to `native-4`). Each part takes the repository the job before it handed
+on, skips what is built, and hands on the result. A part runs only when
+the one before stopped starting packages for lack of time.
 
 1. `abuild fetch verify` for each listed package in `alpine-rv32`, as in
    step 11, section 5: downloading needs no emulation.
@@ -188,8 +236,10 @@ up to date and both calls take a minute.
    `ABUILD_BOOTSTRAP=1 APORTS_BOOTSTRAP=1`, as in step 11, sections 6 and 8.
    A failing package does not stop the loop: the others are still built and
    published, and the job ends red. After `budget-minutes` (300 by default)
-   it starts no new package, so there is time left to publish; the next run
-   continues where this one stopped.
+   it starts no new package, so there is time left to hand the repository
+   on; the next part, or the next run, continues where this one stopped.
+   A package still building at the step's limit (340 minutes) is stopped
+   and built again from the start by the next part.
 5. `main/openssl` carries the option `rebuild-if-cross`. The openssl that
    `bootstrap.sh` cross-builds has no thread support, which python3's ssl
    module needs (step 11, section 8). The script reads
@@ -213,13 +263,15 @@ would remove it from the site.
 
 ### Release job (`ci/make-release.sh`)
 
-Packs `main`, `community` and `testing` for riscv32 into
-`alpine-riscv32-packages-DATE.tar.gz`, lists every package as
-`name version repository` in `packages.txt` (from the signed indexes),
-and creates the release `packages-DATE` (`-2`, `-3` if that tag exists)
-with the archive, the keys and `packages.txt`. The notes list what is new
-or rebuilt and what is gone since the previous release, which commit and
-patches it was built from, and how to install it.
+Runs for a tag only, after a complete build: the cross job green and the
+last native part green with nothing left. Packs `main`, `community` and
+`testing` for riscv32 into `alpine-riscv32-packages-DATE.tar.gz` (DATE is
+the tag without `packages-`), lists every package as
+`name version repository` in `packages.txt` (from the signed indexes), and
+creates the release of the tag with the archive, the key and
+`packages.txt`. The notes list what is new or rebuilt and what is gone
+since the previous release, which commit and patches it was built from,
+and how to install it.
 
 ### Pages and releases
 
@@ -233,8 +285,9 @@ They do different jobs, so the workflow publishes both:
 - A release is a flat list of files, so apk cannot use it as a repository;
   the archive inside it can, once unpacked. It keeps every earlier
   snapshot, allows 2 GiB per file, and is the easiest way onto the stick
-  while the board has no network. It is made only on request, so the list
-  of releases stays a list of versions you chose.
+  while the board has no network. It is made only from a tag you push, so
+  the list of releases stays a list of versions you chose, each one a
+  clean build.
 
 ## 4. Adding a package
 
@@ -243,7 +296,8 @@ They do different jobs, so the workflow publishes both:
 2. Add its directory (`main/htop`) to `ci/native-packages.txt`, after the
    packages it needs to build. abuild installs build dependencies only from
    what is built so far.
-3. Push to main.
+3. Push to main. The run builds that package (and nothing already
+   published), and Pages has it when the run is done.
 
 If its source server does not answer the runners, the log ends in
 `ERROR: <package>: fetch failed`; add the file with another copy to
@@ -344,12 +398,20 @@ The first run on main (37824031688, 2026-10-09) built the same with the
 secret's key (cross 71 min, native 2 h 48 min) and failed only at
 `deploy-pages`, because Pages was not switched on.
 
+After Pages was switched on, run 37824031688 was run again and deployed
+the site. Branch run 38083237050 (2026-10-10) started from it: 233 files
+in 5 seconds, every package of the cross job up to date (both
+`bootstrap.sh` calls took 1 second), and the cross compiler went into the
+cache (148 MB). Starting from Pages alone, it went on to build openssl and
+the python3 chain again, which the first release already had; that is
+why a run now adds the newest release on top.
+
 Not tested yet:
 
-- Starting from the first release (`fetch-published.sh`'s fallback) and the
-  mixed keys: the next run, on this branch or on main, does that.
-- The `pages` deploy and installing from the site on the board.
-- The `release` job.
+- Adding the release on top of Pages, with the new indexes and the mixed
+  keys: the next run, on this branch or on main, does that.
+- Several native parts in a row, and a tag run with the `release` job.
+- Installing from the site on the board.
 - How long python3 takes on the runners: the first release has it, so no run
   builds it until its `pkgrel` changes. Its PGO build might not fit the
   native job's 6 hours together with other packages.
@@ -365,5 +427,6 @@ Not tested yet:
   that yet: the old packages would fail apk's signature check.
 - Over HTTPS (Wi-Fi later), the board needs a roughly correct clock to accept
   the github.io certificate.
-- A release made by hand after the workflow has deployed Pages is not
-  picked up: runs start from Pages once it has packages.
+- Four native parts allow about 20 hours of native builds for a release.
+  If that is not enough, there is no release; raising the number means
+  adding a `native-5` job like the others.

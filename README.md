@@ -40,8 +40,9 @@ Built packages are published in two ways by the
   `/testing`), with the signing keys at
   [naelolaiz.github.io/alpine-riscv32](https://naelolaiz.github.io/alpine-riscv32/).
 - As [GitHub releases](https://github.com/naelolaiz/alpine-riscv32/releases),
-  made on request: the main, community and testing repositories for riscv32
-  in one archive, plus the public keys that sign them. The first,
+  one per pushed `packages-*` tag, each built from scratch: the main,
+  community and testing repositories for riscv32 in one archive, plus the
+  public keys that sign them. The first,
   [packages-2026-10-10](https://github.com/naelolaiz/alpine-riscv32/releases/tag/packages-2026-10-10),
   was built on a PC. The release notes list what changed and show how to
   install the packages on a board.
@@ -57,7 +58,7 @@ full aports fork, so the delta stays small and reviewable:
 - `patches/`: `git format-patch` output, one fix per patch, numbered in apply order.
 - [`ci/`](ci/) and [`.github/workflows/packages.yml`](.github/workflows/packages.yml):
   GitHub Actions builds the series and publishes the packages on GitHub Pages,
-  and as a release on request ([guide](docs/steps/23-package-ci.md)).
+  and as a release for each pushed tag ([guide](docs/steps/23-package-ci.md)).
 - `scripts/`: apply the series to a fresh aports checkout and run
   `scripts/bootstrap.sh riscv32` in an Alpine edge container.
 - [`RISCV32.md`](RISCV32.md): package status table.

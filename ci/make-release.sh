@@ -5,18 +5,23 @@
 #                                        riscv32, each with its APKINDEX
 #   *.rsa.pub                            every key that signs something in it
 #   packages.txt                         "name version repository", sorted
-# The workflow runs this only when asked to (Run workflow, "release").
-# Nothing is published when packages.txt is the same as in the newest
-# release, because the archive would be the same too.
+# The workflow runs this for a pushed packages-* tag, after building
+# everything from scratch; the release gets the tag's name.
 #
 # usage: ci/make-release.sh REPODIR
-#   REPODIR  abuild's REPODEST as the native job left it
-# Needs GH_TOKEN with contents: write, GITHUB_REPOSITORY and GITHUB_SHA.
+#   REPODIR  abuild's REPODEST as the last native part left it
+# Needs GH_TOKEN with contents: write, GITHUB_REPOSITORY, GITHUB_REF_NAME
+# (the tag) and GITHUB_SHA.
 
 set -euo pipefail
 
 src=$(realpath "$1")
 repo=${GITHUB_REPOSITORY:?}
+tag=${GITHUB_REF_NAME:?}
+if gh release view "$tag" --repo "$repo" > /dev/null 2>&1; then
+	echo "::error::Release $tag exists already; push a new tag instead"
+	exit 1
+fi
 out=$(mktemp -d)
 cd "$out"
 
@@ -34,25 +39,15 @@ for r in "${repos[@]}"; do
 done | sort > packages.txt
 echo "$(wc -l < packages.txt) packages in ${repos[*]}"
 
+# The release before this one, for the list of changes
 prev=$(gh api "repos/$repo/releases?per_page=100" \
-	--jq '[.[] | select(.draft | not) | select(.tag_name | startswith("packages-"))] | sort_by(.created_at) | last | .tag_name // empty')
+	--jq "[.[] | select(.draft | not) | select(.tag_name | startswith(\"packages-\")) | select(.tag_name != \"$tag\")] | sort_by(.created_at) | last | .tag_name // empty")
 : > previous.txt
 if [ -n "$prev" ]; then
 	gh release download "$prev" --repo "$repo" --pattern packages.txt --output previous.txt --clobber || true
 	sort -o previous.txt previous.txt
 fi
-if cmp -s packages.txt previous.txt; then
-	echo "Same packages as release $prev: no new release" | tee -a "${GITHUB_STEP_SUMMARY:-/dev/null}"
-	exit 0
-fi
 
-date=$(date -u +%F)
-tag=packages-$date
-n=2
-while gh release view "$tag" --repo "$repo" > /dev/null 2>&1; do
-	tag=packages-$date-$n
-	n=$((n + 1))
-done
 archive=alpine-riscv32-packages-${tag#packages-}.tar.gz
 
 # Owned by root in the archive, not by the runner's user
@@ -74,7 +69,7 @@ keys=
 for k in *.rsa.pub; do keys+="${keys:+, }\`$k\`"; done
 
 {
-	echo "Alpine Linux packages for 32-bit RISC-V (riscv32: rv32imac, ilp32 soft-float, musl), built by GitHub Actions from aports commit ${commit:0:7} with patches ${first%%-*} to ${last%%-*} from this repository applied (commit ${GITHUB_SHA:0:7})."
+	echo "Alpine Linux packages for 32-bit RISC-V (riscv32: rv32imac, ilp32 soft-float, musl), built from scratch by GitHub Actions for tag $tag (commit ${GITHUB_SHA:0:7}): aports commit ${commit:0:7} with patches ${first%%-*} to ${last%%-*} from this repository applied."
 	echo
 	echo "## New or rebuilt since ${prev:-the start}"
 	echo
@@ -112,7 +107,7 @@ apk upgrade
 apk add htop
 \`\`\`
 
-A board with network can list https://${GITHUB_REPOSITORY_OWNER,,}.github.io/${repo#*/}/main (and \`/community\`, \`/testing\`) in \`/etc/apk/repositories\` instead: the workflow updates that site on every run.
+A board with network can list https://${GITHUB_REPOSITORY_OWNER,,}.github.io/${repo#*/}/main (and \`/community\`, \`/testing\`) in \`/etc/apk/repositories\` instead: the workflow updates that site on every build on main.
 
 EOF
 	echo "These are unofficial packages and are not supported by Alpine Linux."
@@ -123,7 +118,6 @@ EOF
 } > notes.md
 
 cat notes.md
-gh release create "$tag" --repo "$repo" --target "$GITHUB_SHA" \
+gh release create "$tag" --repo "$repo" --verify-tag \
 	--title "riscv32 packages ${tag#packages-}" --notes-file notes.md \
 	"$archive" ./*.rsa.pub packages.txt
-echo "tag=$tag" >> "${GITHUB_OUTPUT:-/dev/null}"

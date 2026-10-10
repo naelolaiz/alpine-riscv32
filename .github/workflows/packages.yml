@@ -1,42 +1,50 @@
 # Builds the riscv32 packages from aports.commit + patches/ and publishes
-# them as an apk repository on GitHub Pages; when asked to, also as a GitHub
-# release. The guide is docs/steps/23-package-ci.md; every step below says
+# them. The guide is docs/steps/23-package-ci.md; every step below says
 # what it does and why.
 #
-# Four jobs, each on a fresh x86_64 Ubuntu machine ("runner"):
-#   cross    steps 8 and 9: bootstrap.sh cross-builds the toolchain and base
-#   native   step 11: builds ci/native-packages.txt in a riscv32 container
-#   pages    puts the repository on GitHub Pages (main only, every run)
-#   release  publishes it as a GitHub release (main only, and only when the
-#            run was started by hand with "release" ticked)
-# Each run starts from what Pages has (while it has nothing, from the
-# newest packages-* release), so only new or changed packages (new pkgver
-# or pkgrel) are built.
+# Two kinds of run:
+#   a push to a branch  starts from everything published (Pages plus the
+#                       newest release) and builds only what is new or
+#                       changed (new pkgver or pkgrel); on main it then
+#                       updates GitHub Pages
+#   a pushed tag        builds everything from scratch and publishes it as
+#   packages-*          the GitHub release of that tag
+#
+# Jobs, each on a fresh x86_64 Ubuntu machine ("runner"):
+#   cross       steps 8 and 9: bootstrap.sh cross-builds the toolchain and base
+#   native-1..4 step 11: builds ci/native-packages.txt in a riscv32
+#               container (native.yml); a part runs only if the previous
+#               one ran out of time
+#   pages       puts the repository on GitHub Pages (main only)
+#   release     publishes the repository as a GitHub release (tags only)
 
 name: riscv32 packages
 
 on:
   push:
+    branches:
+      - "**"
+    # A tag push runs whatever changed: GitHub does not apply paths to tags
+    tags:
+      - packages-*
     paths:
       - aports.commit
       - patches/**
       - ci/**
       - .github/workflows/packages.yml
+      - .github/workflows/native.yml
   workflow_dispatch:
     inputs:
       budget-minutes:
-        description: Minutes the native job may start new packages for
+        description: Minutes each native part may start new packages for
         default: "300"
-      release:
-        description: Also publish the packages as a GitHub release (main only)
-        type: boolean
-        default: false
 
 permissions:
   contents: read
 
 # Runs on main wait for each other, because each builds on top of what the
-# previous one published. On other branches a new push cancels the older run.
+# previous one published. On other branches a new push cancels the older
+# run. A tag has its own group.
 concurrency:
   group: packages-${{ github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
@@ -47,7 +55,29 @@ env:
   PACKAGES_URL: ${{ vars.PACKAGES_URL }}
 
 jobs:
+  # A release made by hand on the Releases page pushes its new tag too.
+  # There is nothing to build then, and the release job would find the
+  # release taken.
+  tag:
+    if: github.ref_type == 'tag'
+    runs-on: ubuntu-24.04
+    outputs:
+      released: ${{ steps.check.outputs.released }}
+    steps:
+      - id: check
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          if gh release view "$GITHUB_REF_NAME" --repo "$GITHUB_REPOSITORY" > /dev/null 2>&1; then
+            echo "::notice::Release $GITHUB_REF_NAME exists already: nothing to build"
+            echo released=true >> "$GITHUB_OUTPUT"
+          fi
+
+  # Runs when the tag job is skipped (a branch) too: !cancelled() keeps a
+  # skipped dependency from skipping this job
   cross:
+    needs: tag
+    if: ${{ !cancelled() && needs.tag.outputs.released != 'true' }}
     runs-on: ubuntu-24.04
     timeout-minutes: 360
     outputs:
@@ -76,7 +106,7 @@ jobs:
       # Sources downloaded by earlier runs, so gcc, binutils and the rest are
       # not downloaded again
       - name: Restore downloaded sources
-        uses: actions/cache/restore@v4
+        uses: actions/cache/restore@v5
         with:
           path: .cache/distfiles
           key: distfiles-cross-${{ github.run_id }}-${{ github.run_attempt }}
@@ -90,26 +120,23 @@ jobs:
       # use on a board, so Pages and the releases leave it out; it is kept
       # here instead. The key changes when an APKBUILD it is built from
       # changes. Not with a temporary key: apk would not trust its index.
+      # Not for a tag: a release is built from scratch.
       - name: Restore the cross compiler
         id: toolchain
-        if: steps.prepare.outputs.temporary-key == 'false'
-        uses: actions/cache/restore@v4
+        if: steps.prepare.outputs.temporary-key == 'false' && !startsWith(github.ref, 'refs/tags/')
+        uses: actions/cache/restore@v5
         with:
           path: .local/share/abuild/main/x86_64
           key: toolchain-x86_64-${{ hashFiles('aports/main/binutils/*', 'aports/main/gcc/*', 'aports/main/build-base/*') }}
 
-      # Skipped with a temporary key: its packages would not be signed by the
-      # key the published ones are. apk checks every package's own signature,
-      # and packages carried over keep the key they were signed with, so the
-      # container trusts every key that comes with them; bootstrap.sh copies
-      # /etc/apk/keys into its sysroot.
+      # Pages plus the newest release. Skipped with a temporary key: its
+      # packages would not be signed by the key the published ones are.
+      # Skipped for a tag: a release is built from scratch.
       - name: Download the published packages
-        if: steps.prepare.outputs.temporary-key == 'false'
+        if: steps.prepare.outputs.temporary-key == 'false' && !startsWith(github.ref, 'refs/tags/')
         env:
           GH_TOKEN: ${{ github.token }}
-        run: |
-          alpine-riscv32/ci/fetch-published.sh "${PACKAGES_URL:-https://${GITHUB_REPOSITORY_OWNER,,}.github.io/${GITHUB_REPOSITORY#*/}}" .local/share/abuild
-          docker exec alpine-rv32 sh -c 'cp /work/.local/share/abuild/*.rsa.pub /etc/apk/keys/ && ls /etc/apk/keys/'
+        run: alpine-riscv32/ci/fetch-published.sh "${PACKAGES_URL:-https://${GITHUB_REPOSITORY_OWNER,,}.github.io/${GITHUB_REPOSITORY#*/}}" .local/share/abuild
 
       # abuild skips a package when its .apk files exist and are newer than
       # the APKBUILD and its sources, and the index is newer than the .apk
@@ -135,7 +162,7 @@ jobs:
 
       - name: Save downloaded sources
         if: always()
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v5
         with:
           path: .cache/distfiles
           key: distfiles-cross-${{ github.run_id }}-${{ github.run_attempt }}
@@ -143,9 +170,9 @@ jobs:
       - name: Save the cross compiler
         if: >-
           steps.bootstrap.outcome == 'success'
-          && steps.prepare.outputs.temporary-key == 'false'
+          && steps.toolchain.outcome == 'success'
           && steps.toolchain.outputs.cache-hit != 'true'
-        uses: actions/cache/save@v4
+        uses: actions/cache/save@v5
         with:
           path: .local/share/abuild/main/x86_64
           key: ${{ steps.toolchain.outputs.cache-primary-key }}
@@ -158,7 +185,7 @@ jobs:
       - name: Hand the repository to the next job
         id: upload
         if: ${{ !cancelled() && steps.bootstrap.outcome != 'skipped' }}
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: repo
           path: .local/share/abuild/
@@ -170,7 +197,7 @@ jobs:
       # with the same one, or apk would not trust these packages there
       - name: Hand the temporary key to the next job
         if: steps.prepare.outputs.temporary-key == 'true'
-        uses: actions/upload-artifact@v4
+        uses: actions/upload-artifact@v6
         with:
           name: temporary-key
           path: .config/abuild/alpine-riscv32-ci.rsa
@@ -181,139 +208,53 @@ jobs:
         if: steps.bootstrap.outcome != 'success'
         run: exit 1
 
-  native:
+  # Up to four native parts in a row; a part runs only when the previous
+  # one handed on the repository and left packages for lack of time (or
+  # was stopped in the middle of a package, which leaves "left" empty)
+  native-1:
     needs: cross
-    runs-on: ubuntu-24.04
-    timeout-minutes: 360
-    outputs:
-      uploaded: ${{ steps.upload.outcome == 'success' }}
-      left: ${{ steps.build.outputs.left }}
-    steps:
-      - uses: actions/checkout@v5
-        with:
-          path: alpine-riscv32
+    uses: ./.github/workflows/native.yml
+    secrets: inherit
+    with:
+      part: "1"
+      temporary-key: ${{ needs.cross.outputs.temporary-key }}
+      budget-minutes: ${{ inputs.budget-minutes || '300' }}
 
-      - name: Free disk space
-        run: |
-          sudo rm -rf /usr/share/dotnet /usr/local/lib/android /opt/ghc /opt/hostedtoolcache/CodeQL
-          df -h /
+  native-2:
+    needs: [cross, native-1]
+    if: ${{ !cancelled() && needs.native-1.outputs.uploaded == 'true' && needs.native-1.outputs.left != '0' }}
+    uses: ./.github/workflows/native.yml
+    secrets: inherit
+    with:
+      part: "2"
+      temporary-key: ${{ needs.cross.outputs.temporary-key }}
+      budget-minutes: ${{ inputs.budget-minutes || '300' }}
 
-      - name: Get the temporary key from the cross job
-        if: needs.cross.outputs.temporary-key == 'true'
-        uses: actions/download-artifact@v4
-        with:
-          name: temporary-key
-          path: .config/abuild
+  native-3:
+    needs: [cross, native-2]
+    if: ${{ !cancelled() && needs.native-2.outputs.uploaded == 'true' && needs.native-2.outputs.left != '0' }}
+    uses: ./.github/workflows/native.yml
+    secrets: inherit
+    with:
+      part: "3"
+      temporary-key: ${{ needs.cross.outputs.temporary-key }}
+      budget-minutes: ${{ inputs.budget-minutes || '300' }}
 
-      - name: Prepare aports, signing key and build container
-        env:
-          ABUILD_PRIVKEY: ${{ secrets.ABUILD_PRIVKEY }}
-        run: alpine-riscv32/ci/prepare.sh
-
-      - name: Restore downloaded sources
-        uses: actions/cache/restore@v4
-        with:
-          path: .cache/distfiles
-          key: distfiles-native-${{ github.run_id }}-${{ github.run_attempt }}
-          restore-keys: distfiles-native-
-
-      # Sources whose own server fails from the runners (ci/sources.txt)
-      - name: Download sources from other copies
-        run: alpine-riscv32/ci/prefetch-sources.sh
-
-      - name: Get the repository from the cross job
-        uses: actions/download-artifact@v4
-        with:
-          name: repo
-          path: .local/share/abuild
-
-      # Step 11, section 5: download in the x86_64 container, without
-      # emulation. A failure here only warns: abuild tries again in the build.
-      - name: Download the sources (x86_64)
-        run: |
-          sed -e 's/#.*//' alpine-riscv32/ci/native-packages.txt | while read -r p _; do
-            [ -n "$p" ] || continue
-            docker exec -u builder -w "/work/aports/$p" alpine-rv32 abuild fetch verify ||
-              echo "::warning::could not download the sources of $p"
-          done
-
-      # Step 10, section 4 and step 11, section 1: Alpine's static
-      # qemu-riscv32 and its binfmt_misc rule, registered with OCFP. F opens
-      # the interpreter now, so it works inside containers; C lets setuid
-      # riscv32 programs (abuild-apk) keep their rights.
-      - name: Let the runner run riscv32 programs
-        run: |
-          docker exec alpine-rv32 apk add -q qemu-riscv32
-          docker exec alpine-rv32 cp /usr/bin/qemu-riscv32 /work/qemu-riscv32-static
-          docker exec alpine-rv32 cp /usr/lib/binfmt.d/qemu-riscv32.conf /work/
-          [ -e /proc/sys/fs/binfmt_misc/register ] || sudo mount -t binfmt_misc binfmt_misc /proc/sys/fs/binfmt_misc
-          if [ -e /proc/sys/fs/binfmt_misc/qemu-riscv32 ]; then echo -1 | sudo tee /proc/sys/fs/binfmt_misc/qemu-riscv32; fi
-          sed -e "s|/usr/bin/qemu-riscv32|$PWD/qemu-riscv32-static|" -e 's|:[A-Z]*$|:OCFP|' qemu-riscv32.conf | sudo tee /proc/sys/fs/binfmt_misc/register
-          cat /proc/sys/fs/binfmt_misc/qemu-riscv32
-
-      # Step 11, sections 2 and 3, with docker instead of podman: a riscv32
-      # tree from the cross-built packages, imported as an image, run with
-      # /work mounted and a user with the runner's uid. It trusts every key
-      # in the repository directory: this run's and those of packages
-      # carried over from earlier ones.
-      - name: Build the riscv32 build container
-        run: |
-          docker exec alpine-rv32 sh -c 'mkdir -p /var/tmp/rv32-native/etc/apk/keys && cp /work/.local/share/abuild/*.rsa.pub /var/tmp/rv32-native/etc/apk/keys/'
-          docker exec alpine-rv32 apk add -q --root /var/tmp/rv32-native --initdb --arch riscv32 --repository /work/.local/share/abuild/main alpine-baselayout busybox busybox-binsh apk-tools abuild build-base
-          docker exec alpine-rv32 sh -c 'echo /work/.local/share/abuild/main > /var/tmp/rv32-native/etc/apk/repositories'
-          docker exec alpine-rv32 tar -C /var/tmp/rv32-native -cf - . | docker import - rv32-native
-          docker run -d --name rv32-native -v "$PWD":/work -w /work rv32-native sleep infinity
-          docker exec rv32-native adduser -D -H -h /work -u "$(id -u)" builder
-          docker exec rv32-native addgroup builder abuild
-          docker exec -u builder rv32-native sh -c 'uname -m; gcc -dumpmachine; abuild-apk --version'
-
-      # Same timestamps rule as in the cross job
-      - name: Build natively
-        id: build
-        continue-on-error: true
-        timeout-minutes: 340
-        env:
-          BUDGET_MINUTES: ${{ inputs.budget-minutes || '300' }}
-        run: |
-          find .local/share/abuild -name '*.apk' -exec touch {} +
-          find .local/share/abuild -name APKINDEX.tar.gz -exec touch {} +
-          alpine-riscv32/ci/native-build.sh
-
-      - name: Stop the containers
-        if: always()
-        run: docker stop rv32-native alpine-rv32 || true
-
-      - name: Save downloaded sources
-        if: always()
-        uses: actions/cache/save@v4
-        with:
-          path: .cache/distfiles
-          key: distfiles-native-${{ github.run_id }}-${{ github.run_attempt }}
-
-      # Replaces the cross job's artifact, so pages and release take the
-      # newest. Not when the build step never ran: the cross job's artifact
-      # stays then, and it is complete.
-      - name: Hand the repository to the publishing jobs
-        id: upload
-        if: ${{ !cancelled() && steps.build.outcome != 'skipped' }}
-        uses: actions/upload-artifact@v4
-        with:
-          name: repo
-          path: .local/share/abuild/
-          include-hidden-files: true
-          compression-level: 0
-          retention-days: 7
-          overwrite: true
-
-      - name: Fail if a package failed
-        if: steps.build.outcome != 'success'
-        run: exit 1
+  native-4:
+    needs: [cross, native-3]
+    if: ${{ !cancelled() && needs.native-3.outputs.uploaded == 'true' && needs.native-3.outputs.left != '0' }}
+    uses: ./.github/workflows/native.yml
+    secrets: inherit
+    with:
+      part: "4"
+      temporary-key: ${{ needs.cross.outputs.temporary-key }}
+      budget-minutes: ${{ inputs.budget-minutes || '300' }}
 
   # Runs after a failed build too, so what was built is not lost; never
   # with a temporary key, and only on main (the github-pages environment
   # allows only main anyway)
   pages:
-    needs: [cross, native]
+    needs: [cross, native-1, native-2, native-3, native-4]
     if: >-
       ${{ !cancelled() && github.ref == 'refs/heads/main'
       && needs.cross.outputs.uploaded == 'true'
@@ -326,7 +267,7 @@ jobs:
       name: github-pages
       url: ${{ steps.deploy.outputs.page_url }}
     steps:
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v7
         with:
           name: repo
           path: site
@@ -367,16 +308,19 @@ jobs:
       - id: deploy
         uses: actions/deploy-pages@v4
 
-  # A snapshot for download, made only when asked for (Actions tab, riscv32
-  # packages, Run workflow, "release" ticked) and only from a complete
-  # build: both build jobs green and no package left for a later run
+  # Only for a pushed packages-* tag, and only from a complete build: the
+  # cross job green and the last native part that ran green with nothing
+  # left. (A part that ends with nothing left is the last one: the next
+  # part runs only when something was left.)
   release:
-    needs: [cross, native]
+    needs: [cross, native-1, native-2, native-3, native-4]
     if: >-
-      ${{ github.event_name == 'workflow_dispatch' && inputs.release
-      && github.ref == 'refs/heads/main'
-      && needs.cross.outputs.temporary-key == 'false'
-      && needs.native.outputs.left == '0' }}
+      ${{ !cancelled() && startsWith(github.ref, 'refs/tags/packages-')
+      && needs.cross.result == 'success'
+      && ((needs.native-1.result == 'success' && needs.native-1.outputs.left == '0')
+      || (needs.native-2.result == 'success' && needs.native-2.outputs.left == '0')
+      || (needs.native-3.result == 'success' && needs.native-3.outputs.left == '0')
+      || (needs.native-4.result == 'success' && needs.native-4.outputs.left == '0')) }}
     runs-on: ubuntu-24.04
     permissions:
       contents: write
@@ -386,7 +330,7 @@ jobs:
         with:
           path: alpine-riscv32
 
-      - uses: actions/download-artifact@v4
+      - uses: actions/download-artifact@v7
         with:
           name: repo
           path: repo
