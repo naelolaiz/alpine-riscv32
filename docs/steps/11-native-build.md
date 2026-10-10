@@ -373,7 +373,8 @@ own instead of the full gdb. Each such change is one generic patch in
 
 ### vim, htop, mc, python3 and neofetch
 
-These five build with four edits, patches 0007 to 0010. Counted as in the
+These five build with four edits, patches 0007 to 0010, and one fix, patch
+0011. Counted as in the
 table at the top, on top of what sections 5 and 6 built:
 
 | Package | Not yet built, as is | With the edits | What the edits drop |
@@ -402,15 +403,22 @@ gets one commit per package, as in aports. `$PWD` is needed because `-C
 aports` makes git resolve paths from inside `aports`:
 
 ```sh
-git -C aports am "$PWD"/alpine-riscv32/patches/000[789]-*.patch "$PWD"/alpine-riscv32/patches/0010-*.patch
+git -C aports am "$PWD"/alpine-riscv32/patches/000[789]-*.patch "$PWD"/alpine-riscv32/patches/001[01]-*.patch
 git -C aports log --oneline -5
 ```
 
-The log shows the four commits on top of the busybox one (0006). If `am`
+The log shows the five commits on top of the busybox one (0006). If `am`
 stops at 0007 or 0008 because those edits are already in the tree,
-`git -C aports am --abort` and apply only 0009 and 0010.
+`git -C aports am --abort` and apply only 0009 to 0011.
 
-The four subsections below show what each patch changes and why.
+If 0007 to 0010 are already applied (0011 came later), apply only the new one,
+from the same directory:
+
+```sh
+git -C aports am "$PWD"/alpine-riscv32/patches/0011-*.patch
+```
+
+The five subsections below show what each patch changes and why.
 
 #### Edit 1: vim (patch 0007)
 
@@ -577,21 +585,83 @@ e2fsprogs' `configure.ac` (`AC_ARG_ENABLE([fuse2fs]`) looks for fuse when
 none. The `fuse2fs` split function would then fail on the missing
 `usr/bin/fuse2fs`, so the two fuse2fs subpackages go with the dependency.
 
+#### Fix 5: util-linux keeps utmps (patch 0011)
+
+util-linux's own bootstrap gate dropped `utmps-dev` and the utmps compiler
+flags, and the build then stopped in `login-utils/last.c` with `'_PATH_WTMP'
+undeclared`. Alpine's musl removes `_PATH_UTMP` and `_PATH_WTMP` from
+`<paths.h>` (`main/musl/adjust-paths.patch`) because utmps' `<utmpx.h>` and
+util-linux's `utmps.patch` provide them, so util-linux needs utmps even
+when bootstrapping. utmps and its chain (skalibs, execline, s6) were built in
+section 6 for dropbear, so this adds no package. `aports/main/util-linux/APKBUILD:17`:
+
+```diff
+@@ -17,6 +17,8 @@ makedepends_host="
+ 	linux-headers
+ 	ncurses-dev
+ 	sqlite-dev
++	utmps-dev
++	utmps-static
+ 	zlib-dev
+ 	"
+ subpackages="
+@@ -59,8 +61,6 @@ if [ -z "$BOOTSTRAP" ] && [ -z "$APORTS_BOOTSTRAP" ]; then
+ 		linux-pam-dev
+ 		python3-dev
+ 		libeconf-dev
+-		utmps-dev
+-		utmps-static
+ 		"
+ 	subpackages="$subpackages
+ 		$pkgname-login
+@@ -148,14 +148,18 @@ prepare() {
+ }
+ 
+ build() {
++	# Linking utmps statically is strongly preferred by the utmps author
++	# and also much more space efficient - adds 4 kiB to each binary, that's
++	# 20 kiB in total for util-linux-*, versus 196 kiB (libskarnet.so).
++	# TODO: Find a better way (libutmps.so w/o dependency on libskarnet.so)?
++	# musl's <paths.h> on Alpine has no _PATH_UTMP and _PATH_WTMP, utmps
++	# provides them, so it is needed when bootstrapping too.
++	export CFLAGS="$CFLAGS $(pkg-config --cflags --static libutmps)"
++	export LDFLAGS="$LDFLAGS $(pkg-config --libs --static libutmps)"
+ 	if [ -z "$BOOTSTRAP" ]; then
+-		# Linking utmps statically is strongly preferred by the utmps author
+-		# and also much more space efficient - adds 4 kiB to each binary, that's
+-		# 20 kiB in total for util-linux-*, versus 196 kiB (libskarnet.so).
+-		# TODO: Find a better way (libutmps.so w/o dependency on libskarnet.so)?
+ 		# also throw in lto when not bootstrapping
+-		export CFLAGS="$CFLAGS -ffat-lto-objects -flto=auto $(pkg-config --cflags --static libutmps)"
+-		export LDFLAGS="$LDFLAGS $(pkg-config --libs --static libutmps) $(pkg-config --libs libeconf)"
++		export CFLAGS="$CFLAGS -ffat-lto-objects -flto=auto"
++		export LDFLAGS="$LDFLAGS $(pkg-config --libs libeconf)"
+ 	fi
+ 
+ 	# --disable-chfn-chsh - chfn and chsh are provided by shadow package
+```
+
+`pkg-config --cflags libutmps` adds `-I/usr/include/utmps`, so `<utmpx.h>`
+is utmps' header, and `utmps.patch` then defines `_PATH_WTMP`. Without the
+variables the full build gets the same flags as before, in another order.
+
 #### Check
 
 CONTAINER (either one). Each line prints `makedepends` and the subpackages;
 with the variable set, vim lists only `ncurses-dev` and no `gvim`, htop has no
 `lm-sensors-dev`, glib has no docbook, libxslt or py3-docutils and no
-`glib-doc`, e2fsprogs has no `fuse3-dev` and no `fuse2fs`:
+`glib-doc`, e2fsprogs has no `fuse3-dev` and no `fuse2fs`, util-linux lists
+`utmps-dev utmps-static`:
 
 ```sh
 cd /work/aports/community/vim && APORTS_BOOTSTRAP=1 sh -c '. ./APKBUILD; echo $makedepends; echo $subpackages'
 cd /work/aports/main/htop && APORTS_BOOTSTRAP=1 sh -c '. ./APKBUILD; echo $makedepends'
 cd /work/aports/main/glib && APORTS_BOOTSTRAP=1 sh -c '. ./APKBUILD; echo $makedepends; echo $subpackages'
 cd /work/aports/main/e2fsprogs && APORTS_BOOTSTRAP=1 sh -c '. ./APKBUILD; echo $makedepends; echo $subpackages'
+cd /work/aports/main/util-linux && APORTS_BOOTSTRAP=1 sh -c '. ./APKBUILD; echo $makedepends'
 ```
 
-Run the same four lines without `APORTS_BOOTSTRAP=1` to see the full lists
+Run the same five lines without `APORTS_BOOTSTRAP=1` to see the full lists
 come back.
 
 #### Sources
@@ -646,7 +716,7 @@ tar -xzOf /work/.local/share/abuild/main/riscv32/openssl-dev-3.5.9-r*.apk usr/in
 
 Then the three groups. `APORTS_BOOTSTRAP=1` switches on the
 four edits, and the gate util-linux already has (no PAM, Python bindings or
-`login`); `ABUILD_BOOTSTRAP=1` skips the tests as in section 6. Three groups,
+`login`; utmps stays, patch 0011); `ABUILD_BOOTSTRAP=1` skips the tests as in section 6. Three groups,
 so each target is usable as soon as its group is done:
 
 ```sh
@@ -668,7 +738,8 @@ for p in main/libedit main/pcre2 main/swig main/libcap-ng main/util-linux main/g
   lsof before htop (`abuild -r` also installs `depends`), bash before
   neofetch.
 - Group 3 is mc's chain: util-linux (libmount for glib, libuuid and libblkid
-  for e2fsprogs) needs libcap-ng, whose Python bindings need swig; glib
+  for e2fsprogs) needs libcap-ng, whose Python bindings need swig, and
+  utmps from section 6; glib
   builds with meson, a python3 program, which needs the `py3-` build tools
   first.
 - abuild takes the repository name from the APKBUILD's parent directory, so
