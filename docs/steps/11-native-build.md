@@ -373,8 +373,8 @@ own instead of the full gdb. Each such change is one generic patch in
 
 ### vim, htop, mc, python3 and neofetch
 
-These five build with four edits, patches 0007 to 0010, and one fix, patch
-0011. Counted as in the
+These five build with four edits, patches 0007 to 0010, and two fixes,
+patches 0011 and 0012. Counted as in the
 table at the top, on top of what sections 5 and 6 built:
 
 | Package | Not yet built, as is | With the edits | What the edits drop |
@@ -403,22 +403,23 @@ gets one commit per package, as in aports. `$PWD` is needed because `-C
 aports` makes git resolve paths from inside `aports`:
 
 ```sh
-git -C aports am "$PWD"/alpine-riscv32/patches/000[789]-*.patch "$PWD"/alpine-riscv32/patches/001[01]-*.patch
+git -C aports am "$PWD"/alpine-riscv32/patches/000[789]-*.patch "$PWD"/alpine-riscv32/patches/001[012]-*.patch
 git -C aports log --oneline -5
 ```
 
-The log shows the five commits on top of the busybox one (0006). If `am`
+The log shows the six commits on top of the busybox one (0006). If `am`
 stops at 0007 or 0008 because those edits are already in the tree,
-`git -C aports am --abort` and apply only 0009 to 0011.
+`git -C aports am --abort` and apply only 0009 to 0012.
 
-If 0007 to 0010 are already applied (0011 came later), apply only the new one,
-from the same directory:
+0011 and 0012 came later. If 0007 to 0010 are already applied, apply only
+the ones `git -C aports log --oneline -6` does not list yet, from the same
+directory, for example:
 
 ```sh
-git -C aports am "$PWD"/alpine-riscv32/patches/0011-*.patch
+git -C aports am "$PWD"/alpine-riscv32/patches/0012-*.patch
 ```
 
-The five subsections below show what each patch changes and why.
+The six subsections below show what each patch changes and why.
 
 #### Edit 1: vim (patch 0007)
 
@@ -645,6 +646,50 @@ section 6 for dropbear, so this adds no package. `aports/main/util-linux/APKBUIL
 is utmps' header, and `utmps.patch` then defines `_PATH_WTMP`. Without the
 variables the full build gets the same flags as before, in another order.
 
+#### Fix 6: pcre2 without JIT on riscv32 (patch 0012)
+
+On the board, mc died with `Illegal instruction`. The kernel log
+(`dmesg`) showed the trap in anonymous memory, on a valid compressed
+instruction (`7139`, `addi sp,sp,-64`) right after the block header of
+pcre2's JIT allocator: code that pcre2 generates at run time for a regular
+expression, which mc uses through glib. `pcre2grep` shows it directly:
+
+```sh
+echo hello | pcre2grep 'h.l+o'
+echo hello | pcre2grep --no-jit 'h.l+o'
+```
+
+The first dies with `Illegal instruction`, the second prints `hello`. The
+likely cause is that the instruction cache does not see the freshly written
+code on the ESP32-S31 (musl does ask the kernel to synchronise it, through
+the `riscv_flush_icache` system call), which userspace cannot fix. pcre2
+then builds without JIT on riscv32, as it already does on sh; glib falls
+back to pcre2's interpreter on its own. `pkgrel` goes up so that apk
+replaces copies built before. `aports/main/pcre2/APKBUILD:5` and `:44`:
+
+```diff
+@@ -2,7 +2,7 @@
+ # Maintainer: Jakub Jirutka <jakub@jirutka.cz>
+ pkgname=pcre2
+ pkgver=10.49
+-pkgrel=0
++pkgrel=1
+ pkgdesc="Perl-compatible regular expression library"
+ url="https://pcre.org/"
+ arch="all"
+@@ -42,7 +42,9 @@ source="https://github.com/PCRE2Project/pcre2/releases/download/pcre2-$pkgver/pc
+ #     - CVE-2022-1587
+ 
+ case "$CARCH" in
+-	sh*) _enable_jit="";;
++	# riscv32: JIT code dies with SIGILL on its first instruction on the
++	# ESP32-S31 (rv32imac); the interpreter works
++	sh*|riscv32) _enable_jit="";;
+ 	*) _enable_jit="--enable-jit";;
+ esac
+ 
+```
+
 #### Check
 
 CONTAINER (either one). Each line prints `makedepends` and the subpackages;
@@ -703,15 +748,25 @@ bootstrap rebuilds openssl natively for the same reason. CONTAINER
 ```sh
 export ABUILD_BOOTSTRAP=1 APORTS_BOOTSTRAP=1
 cd /work/aports/main/openssl && abuild -rf
-abuild-apk fix libcrypto3 libssl3
+abuild-apk add /work/.local/share/abuild/main/riscv32/libcrypto3-3.5.9-r0.apk /work/.local/share/abuild/main/riscv32/libssl3-3.5.9-r0.apk
+abuild-apk del libcrypto3 libssl3
 tar -xzOf /work/.local/share/abuild/main/riscv32/openssl-dev-3.5.9-r*.apk usr/include/openssl/configuration.h 2>/dev/null | grep THREADS
 ```
 
 - `-f` forces the build: the package from step 9 has the same version, so
   abuild would otherwise call it up to date.
-- `abuild-apk fix` reinstalls the two libraries in the container from the
-  new packages; with the same version number apk would not replace them on
-  its own. The board needs the same `apk fix` once it gets the new packages.
+- The new packages have the same version as the cross-built ones, so
+  neither `apk upgrade` nor `apk fix` takes them: `fix` reinstalls exactly
+  the installed package, identified by its checksum, and prints `[APK
+  unavailable, skipped]` when the repository only has the new build. Adding
+  the two files makes apk see a different package of the same version, and
+  it replaces the installed one (`Replacing`).
+- Adding a file also writes its checksum into `/etc/apk/world`, which would
+  pin the library. `abuild-apk del` removes those two entries again; the
+  libraries stay installed because other packages depend on them.
+- The board needs the same two commands with `apk` once it gets the new
+  packages, with the path of its copy of the repository and
+  `--repositories-file /dev/null` when the PC is not reachable.
 - The last line prints `OPENSSL_THREADS` and no `OPENSSL_NO_THREADS`.
 
 Then the three groups. `APORTS_BOOTSTRAP=1` switches on the
@@ -746,6 +801,11 @@ for p in main/libedit main/pcre2 main/swig main/libcap-ng main/util-linux main/g
   vim lands in `community/riscv32` and neofetch in `testing/riscv32` next to
   `main/riscv32`. neofetch is `noarch`; abuild still files it under the
   build architecture.
+- If you built group 3 before patch 0012, rebuild pcre2 alone: `cd
+  /work/aports/main/pcre2 && abuild -r`. The new `pkgrel` makes abuild see
+  it as out of date, and the board takes `pcre2-10.49-r1` with `apk
+  upgrade`. Nothing else needs a rebuild: glib and mc call pcre2 through
+  its shared library.
 
 Done when: nano and dropbear are built in `rv32-native`, and `ssh` into the
 QEMU machine prints `riscv32`.
