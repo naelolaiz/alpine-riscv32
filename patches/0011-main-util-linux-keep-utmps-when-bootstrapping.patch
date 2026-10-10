@@ -1,0 +1,67 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: naelolaiz <1333555+naelolaiz@users.noreply.github.com>
+Date: Sat, 10 Oct 2026 09:39:48 +0000
+Subject: [PATCH 11/11] main/util-linux: keep utmps when bootstrapping
+
+Alpine's musl removes _PATH_UTMP and _PATH_WTMP from <paths.h>
+(adjust-paths.patch) because utmps provides them. util-linux dropped
+utmps-dev and its compiler flags when BOOTSTRAP or APORTS_BOOTSTRAP is
+set, so last.c failed with "_PATH_WTMP undeclared".
+
+Keep utmps-dev and utmps-static in makedepends_host and add the utmps
+flags in every build; only LTO and libeconf stay in the full build.
+utmps needs skalibs, execline and s6, four small source packages.
+---
+ main/util-linux/APKBUILD | 20 ++++++++++++--------
+ 1 file changed, 12 insertions(+), 8 deletions(-)
+
+diff --git a/main/util-linux/APKBUILD b/main/util-linux/APKBUILD
+index cfd9c718861..7a262ce6ad7 100644
+--- a/main/util-linux/APKBUILD
++++ b/main/util-linux/APKBUILD
+@@ -17,6 +17,8 @@ makedepends_host="
+ 	linux-headers
+ 	ncurses-dev
+ 	sqlite-dev
++	utmps-dev
++	utmps-static
+ 	zlib-dev
+ 	"
+ subpackages="
+@@ -59,8 +61,6 @@ if [ -z "$BOOTSTRAP" ] && [ -z "$APORTS_BOOTSTRAP" ]; then
+ 		linux-pam-dev
+ 		python3-dev
+ 		libeconf-dev
+-		utmps-dev
+-		utmps-static
+ 		"
+ 	subpackages="$subpackages
+ 		$pkgname-login
+@@ -148,14 +148,18 @@ prepare() {
+ }
+ 
+ build() {
++	# Linking utmps statically is strongly preferred by the utmps author
++	# and also much more space efficient - adds 4 kiB to each binary, that's
++	# 20 kiB in total for util-linux-*, versus 196 kiB (libskarnet.so).
++	# TODO: Find a better way (libutmps.so w/o dependency on libskarnet.so)?
++	# musl's <paths.h> on Alpine has no _PATH_UTMP and _PATH_WTMP, utmps
++	# provides them, so it is needed when bootstrapping too.
++	export CFLAGS="$CFLAGS $(pkg-config --cflags --static libutmps)"
++	export LDFLAGS="$LDFLAGS $(pkg-config --libs --static libutmps)"
+ 	if [ -z "$BOOTSTRAP" ]; then
+-		# Linking utmps statically is strongly preferred by the utmps author
+-		# and also much more space efficient - adds 4 kiB to each binary, that's
+-		# 20 kiB in total for util-linux-*, versus 196 kiB (libskarnet.so).
+-		# TODO: Find a better way (libutmps.so w/o dependency on libskarnet.so)?
+ 		# also throw in lto when not bootstrapping
+-		export CFLAGS="$CFLAGS -ffat-lto-objects -flto=auto $(pkg-config --cflags --static libutmps)"
+-		export LDFLAGS="$LDFLAGS $(pkg-config --libs --static libutmps) $(pkg-config --libs libeconf)"
++		export CFLAGS="$CFLAGS -ffat-lto-objects -flto=auto"
++		export LDFLAGS="$LDFLAGS $(pkg-config --libs libeconf)"
+ 	fi
+ 
+ 	# --disable-chfn-chsh - chfn and chsh are provided by shadow package
+-- 
+2.43.0
+
