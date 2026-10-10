@@ -897,6 +897,56 @@ for p in main/libevent main/tmux main/less main/tree main/ncdu main/coreutils co
 The order follows the dependencies: each library comes right before the
 first package that needs it, and bmake before lowdown before btop.
 
+### Developer and network tools
+
+cmake, curl, git, wget, gdb, tcpdump, iproute2, nmap and the full openssh
+(client and `sftp-server`). Built after the two batches above, they need
+27 source packages with four more edits, patches 0014 to 0017. Without the
+edits curl alone would need 44 and git 54, nearly all of it the Python
+modules behind cmake's manual.
+
+| Patch | Package | Left out when bootstrapping | Why it matters |
+| --- | --- | --- | --- |
+| 0014 | cmake | the man pages (`--sphinx-man`, py3-sphinx) | sphinx is about 30 Python modules; brotli, c-ares (both for curl) and tcpdump build with cmake |
+| 0015 | elfutils | the debuginfod client and server | they need curl, gnutls, libmicrohttpd and json-c; gdb and iproute2 only need libelf and libdw |
+| 0016 | git | xmlto in the base `makedepends` | it is only used for the man pages, which git already skips when bootstrapping |
+| 0017 | gdb | the second full build for `gdb-multiarch`, and `--with-debuginfod` | debuginfod is gone with 0015; the APKBUILD itself notes `--enable-targets=all` is broken on 32-bit targets since GDB 12.1 |
+
+Each patch's commit message has the details; the diffs are in
+[`patches/`](../../patches/).
+
+- strace is not in the list: it has no riscv32 port (`src/linux/` has
+  `riscv64` only, and `configure.ac` knows only `riscv64*`), so it would
+  stop at `configure`. That is a porting job of its own.
+- gdb has RISC-V Linux support, but nobody in this project has built it
+  for riscv32 yet; it is the one most likely to need a fix. It builds last
+  in the loop, so the others are done if it stops.
+
+HOST, in the directory holding `aports` and `alpine-riscv32`:
+
+```sh
+git -C aports am "$PWD"/alpine-riscv32/patches/001[4567]-*.patch
+```
+
+CONTAINER `alpine-rv32`, as your user:
+
+```sh
+cd /work/aports
+for p in main/libarchive main/libuv main/rhash main/cmake main/groff main/brotli main/c-ares main/libpsl main/libev main/nghttp2 main/curl main/perl-error main/git main/wget main/argp-standalone main/musl-obstack main/elfutils main/libpcap main/tcpdump main/jansson main/libnftnl main/iptables main/iproute2 main/pcre main/nmap main/openssh main/gdb; do (cd $p && abuild fetch verify) || break; done
+```
+
+CONTAINER `rv32-native`, as your user:
+
+```sh
+export ABUILD_BOOTSTRAP=1 APORTS_BOOTSTRAP=1
+cd /work/aports
+for p in main/libarchive main/libuv main/rhash main/cmake main/groff main/brotli main/c-ares main/libpsl main/libev main/nghttp2 main/curl main/perl-error main/git main/wget main/argp-standalone main/musl-obstack main/elfutils main/libpcap main/tcpdump main/jansson main/libnftnl main/iptables main/iproute2 main/pcre main/nmap main/openssh main/gdb; do (cd $p && abuild -r) || break; done
+```
+
+The order follows the dependencies: cmake first, because brotli and
+c-ares build with it, then curl's libraries, curl, git; elfutils before
+iproute2 and gdb; libpcap before tcpdump and nmap.
+
 Done when: nano and dropbear are built in `rv32-native`, and `ssh` into the
 QEMU machine prints `riscv32`.
 Next: step 12, Alpine binaries on the board under Buildroot.

@@ -48,6 +48,8 @@ JIT on riscv32, so that python3, htop, vim,
 neofetch and mc build natively too (47 source packages).
 Patch 0013 does the same for wpa_supplicant, which leads a batch of small
 tools (tmux, btop, rsync, dtc, iw and others, 30 source packages).
+Patches 0014 to 0017 (cmake, elfutils, git, gdb) bring cmake, curl, git,
+wget, gdb, tcpdump, iproute2, nmap and openssh down to 27 more.
 Per-package details are
 in [`RISCV32.md`](RISCV32.md); the steps are in [`docs/steps/`](docs/steps/).
 

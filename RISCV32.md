@@ -29,5 +29,10 @@ Failure classes: Alpine, upstream package, RV32, toolchain, kernel, board, memor
 | mc | native build (step 11) | | 4.8.33-r3, no change needed once glib and e2fsprogs build. Chain: libedit, pcre2, swig, libcap-ng, util-linux (0011), gawk, libxml2, libunistring, gettext, py3-installer, py3-flit-core, py3-gpep517, py3-parsing, py3-packaging, samurai, py3-setuptools, py3-wheel, meson, libssh2, libpng, oniguruma, slang, gpm |
 | wpa_supplicant | patched (0013), native build pending | Alpine | 2.11-r4; no D-Bus control interface and no PC/SC when bootstrapping. Needs libnl3 |
 | tmux, less, tree, ncdu, btop, rsync, dtc, i2c-tools, evtest, memtester, dosfstools, exfatprogs, iw, wireless-regdb, iperf3, ethtool, socat, lua5.4 | native build pending (step 11, section 8) | | no change needed. Libraries and build tools: libevent, coreutils, bmake, lowdown, libidn2, lz4, popt, xxhash, musl-fts, libnl3, libmnl |
-| curl, iproute2, strace, gdb | deferred | | natively they need about 145 more source packages (python3, cmake with its sphinx manual, elfutils, util-linux, glib); waits for patches that drop documentation-only and optional dependencies when bootstrapping |
+| cmake | patched (0014), native build pending | Alpine | 4.3.4-r0; no sphinx man pages when bootstrapping |
+| elfutils | patched (0015), native build pending | Alpine | 0.195-r0; no debuginfod client or server when bootstrapping |
+| git | patched (0016), native build pending | Alpine | 2.56.0-r0; xmlto only for the full build (man pages) |
+| gdb | patched (0017), native build pending | Alpine | 16.3-r4; no gdb-multiarch and no debuginfod when bootstrapping; riscv32 native support not tried yet |
+| curl, wget, tcpdump, iproute2, nmap, openssh | native build pending (step 11, section 8) | | no change needed. Libraries: libarchive, libuv, rhash, groff, brotli, c-ares, libpsl, libev, nghttp2, perl-error, argp-standalone, musl-obstack, libpcap, jansson, libnftnl, iptables, pcre |
+| strace | not supported | upstream package | strace has no riscv32 port (`src/linux/` has riscv64 only) |
 | bootstrap.sh | patched (0001) | Alpine | key path from `ABUILD_USERDIR` (generic bug); libatomic dependency for riscv32; its default list lacks mdev-conf, which alpine-base needs (generic gap, built by hand in step 9) |
