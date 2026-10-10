@@ -19,12 +19,12 @@ Failure classes: Alpine, upstream package, RV32, toolchain, kernel, board, memor
 | ncurses, nano | native build (step 11) | | ncurses 6.6_p20260822-r0, nano 9.2-r0; built with `abuild -r` in a riscv32 container under qemu-user, no change needed |
 | dropbear and its build chain (skalibs, execline, s6, utmps, bzip2, tzdata, perl, texinfo, m4, autoconf, automake) | native build (step 11) | | dropbear 2026.94-r0, perl 5.44.0-r0, utmps 0.1.3.4-r0; no change needed; tests skipped (`ABUILD_BOOTSTRAP=1`): m4's checkdepends (diffutils) is not built. dropbear accepts SSH logins in the QEMU VM |
 | python3 and its libraries (expat, bluez-headers, libffi, mpdecimal, chrpath, readline, sqlite, tcl, diffutils, help2man, libtool, gettext-tiny, xz) | native build (step 11, section 8) | | python3 3.14.8-r0; no change needed; needs the natively rebuilt openssl |
-| htop | patched (0008), native build pending | Alpine | 3.5.3-r0; without lm-sensors when bootstrapping. Chain: bison, flex, bash, lsof |
-| vim | patched (0007), native build pending | Alpine | 9.2.1091-r0; no gvim and no script interfaces when bootstrapping |
-| neofetch | native build pending | | 7.1.0-r3 (`testing/`), bash script, no change needed |
-| glib | patched (0009), native build pending | Alpine | 2.90.0-r0; no man pages, DocBook tools or `glib-doc` when bootstrapping |
-| e2fsprogs | patched (0010), native build pending | Alpine | 1.47.4-r0; without `fuse2fs` (fuse3 chain) when bootstrapping |
-| util-linux | patched (0011), native build pending | Alpine | 2.42.4-r2; its bootstrap gate dropped utmps, but Alpine's musl `<paths.h>` has no `_PATH_WTMP` without it (`last.c` failed); utmps stays in every build |
-| mc | native build pending | | 4.8.33-r3, no change needed once glib and e2fsprogs build. Chain: libedit, pcre2, swig, libcap-ng, util-linux (0011), gawk, libxml2, libunistring, gettext, py3-installer, py3-flit-core, py3-gpep517, py3-parsing, py3-packaging, samurai, py3-setuptools, py3-wheel, meson, libssh2, libpng, oniguruma, slang, gpm |
+| htop | patched (0008), native build (step 11) | Alpine | 3.5.3-r0; without lm-sensors when bootstrapping. Chain: bison, flex, bash, lsof |
+| vim | patched (0007), native build (step 11) | Alpine | 9.2.1091-r0; no gvim and no script interfaces when bootstrapping |
+| neofetch | native build (step 11) | | 7.1.0-r3 (`testing/`), bash script, no change needed |
+| glib | patched (0009), native build (step 11) | Alpine | 2.90.0-r0; no man pages, DocBook tools or `glib-doc` when bootstrapping |
+| e2fsprogs | patched (0010), native build (step 11) | Alpine | 1.47.4-r0; without `fuse2fs` (fuse3 chain) when bootstrapping |
+| util-linux | patched (0011), native build (step 11) | Alpine | 2.42.4-r2; its bootstrap gate dropped utmps, but Alpine's musl `<paths.h>` has no `_PATH_WTMP` without it (`last.c` failed); utmps stays in every build |
+| mc | native build (step 11) | | 4.8.33-r3, no change needed once glib and e2fsprogs build. Chain: libedit, pcre2, swig, libcap-ng, util-linux (0011), gawk, libxml2, libunistring, gettext, py3-installer, py3-flit-core, py3-gpep517, py3-parsing, py3-packaging, samurai, py3-setuptools, py3-wheel, meson, libssh2, libpng, oniguruma, slang, gpm |
 | curl, iproute2, exfatprogs, strace, gdb | deferred | | natively they need about 145 more source packages (python3, cmake with its sphinx manual, elfutils, util-linux, glib); waits for patches that drop documentation-only and optional dependencies when bootstrapping |
 | bootstrap.sh | patched (0001) | Alpine | key path from `ABUILD_USERDIR` (generic bug); libatomic dependency for riscv32; its default list lacks mdev-conf, which alpine-base needs (generic gap, built by hand in step 9) |
