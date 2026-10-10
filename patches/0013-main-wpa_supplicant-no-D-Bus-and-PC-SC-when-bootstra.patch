@@ -1,0 +1,55 @@
+From 0000000000000000000000000000000000000000 Mon Sep 17 00:00:00 2001
+From: naelolaiz <1333555+naelolaiz@users.noreply.github.com>
+Date: Sat, 10 Oct 2026 18:30:36 +0000
+Subject: [PATCH 13/13] main/wpa_supplicant: no D-Bus and PC/SC when
+ bootstrapping
+
+With BOOTSTRAP or APORTS_BOOTSTRAP set, build without dbus-dev and
+pcsc-lite-dev, and drop CONFIG_CTRL_IFACE_DBUS_NEW,
+CONFIG_CTRL_IFACE_DBUS_INTRO and CONFIG_PCSC from the build's .config.
+dbus and pcsc-lite pull in about 85 source packages on a new
+architecture; with them gone wpa_supplicant needs only libnl3.
+
+wpa_supplicant is then controlled through wpa_cli and its control
+socket, as with a config file today. EAP-SIM and EAP-AKA still build:
+pcsc_funcs.h has no-op stubs without PCSC_FUNCS, so they only lose
+access to a physical SIM card.
+
+Without the variables the APKBUILD builds exactly what it built before.
+Generic, not specific to riscv32.
+---
+ main/wpa_supplicant/APKBUILD | 11 ++++++++++-
+ 1 file changed, 10 insertions(+), 1 deletion(-)
+
+diff --git a/main/wpa_supplicant/APKBUILD b/main/wpa_supplicant/APKBUILD
+index bfc93e5980e..d50496d39d2 100644
+--- a/main/wpa_supplicant/APKBUILD
++++ b/main/wpa_supplicant/APKBUILD
+@@ -9,7 +9,12 @@ arch="all"
+ options="!check" # has no tests
+ license="BSD-3-Clause"
+ subpackages="$pkgname-doc $pkgname-openrc $pkgname-systemd"
+-makedepends="linux-headers openssl-dev>3 dbus-dev libnl3-dev pcsc-lite-dev"
++makedepends="linux-headers openssl-dev>3 libnl3-dev"
++if [ -z "$BOOTSTRAP" ] && [ -z "$APORTS_BOOTSTRAP" ]; then
++	# D-Bus control interface and PC/SC smartcards (EAP-SIM/AKA with a
++	# SIM card); dbus and pcsc-lite pull in about 85 source packages
++	makedepends="$makedepends dbus-dev pcsc-lite-dev"
++fi
+ provides="nm-wifi-backend"
+ provider_priority=10 # highest
+ source="https://w1.fi/releases/wpa_supplicant-$pkgver.tar.gz
+@@ -63,6 +68,10 @@ prepare() {
+ 
+ 	# Copy our configuration file to the build directory
+ 	cp "$srcdir"/config "$builddir"/wpa_supplicant/.config
++	if [ -n "$BOOTSTRAP" ] || [ -n "$APORTS_BOOTSTRAP" ]; then
++		sed -i -e '/^CONFIG_CTRL_IFACE_DBUS/d' -e '/^CONFIG_PCSC=/d' \
++			"$builddir"/wpa_supplicant/.config
++	fi
+ }
+ 
+ build() {
+-- 
+2.43.0
+
