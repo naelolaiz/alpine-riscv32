@@ -807,6 +807,96 @@ for p in main/libedit main/pcre2 main/swig main/libcap-ng main/util-linux main/g
   upgrade`. Nothing else needs a rebuild: glib and mc call pcre2 through
   its shared library.
 
+### Small tools and Wi-Fi
+
+Built after the five above, these need 30 source packages and one edit,
+patch 0013 for wpa_supplicant:
+
+- everyday: tmux, less, tree, ncdu, btop, rsync
+- board and hardware: dtc, i2c-tools, evtest, memtester, dosfstools,
+  exfatprogs
+- Wi-Fi and network: wpa_supplicant, iw, wireless-regdb, iperf3, ethtool,
+  socat
+- lua5.4
+
+The other 11 are their libraries and build tools: libevent (tmux),
+coreutils, bmake and lowdown (btop's build and man page), libidn2, lz4,
+popt and xxhash (rsync), musl-fts (exfatprogs), libnl3 (iw,
+wpa_supplicant), libmnl (ethtool).
+
+#### Edit 7: wpa_supplicant (patch 0013)
+
+As is, wpa_supplicant needs about 86 source packages: dbus (about 20) for
+its D-Bus control interface and pcsc-lite (about 80, through eudev and gobject-introspection) for
+SIM cards. Native Wi-Fi only needs `wpa_cli` and the control socket, so the
+patch leaves both out when bootstrapping. `aports/main/wpa_supplicant/APKBUILD:12`
+and `:65`:
+
+```diff
+@@ -9,7 +9,12 @@ arch="all"
+ options="!check" # has no tests
+ license="BSD-3-Clause"
+ subpackages="$pkgname-doc $pkgname-openrc $pkgname-systemd"
+-makedepends="linux-headers openssl-dev>3 dbus-dev libnl3-dev pcsc-lite-dev"
++makedepends="linux-headers openssl-dev>3 libnl3-dev"
++if [ -z "$BOOTSTRAP" ] && [ -z "$APORTS_BOOTSTRAP" ]; then
++	# D-Bus control interface and PC/SC smartcards (EAP-SIM/AKA with a
++	# SIM card); dbus and pcsc-lite pull in about 85 source packages
++	makedepends="$makedepends dbus-dev pcsc-lite-dev"
++fi
+ provides="nm-wifi-backend"
+ provider_priority=10 # highest
+ source="https://w1.fi/releases/wpa_supplicant-$pkgver.tar.gz
+@@ -63,6 +68,10 @@ prepare() {
+ 
+ 	# Copy our configuration file to the build directory
+ 	cp "$srcdir"/config "$builddir"/wpa_supplicant/.config
++	if [ -n "$BOOTSTRAP" ] || [ -n "$APORTS_BOOTSTRAP" ]; then
++		sed -i -e '/^CONFIG_CTRL_IFACE_DBUS/d' -e '/^CONFIG_PCSC=/d' \
++			"$builddir"/wpa_supplicant/.config
++	fi
+ }
+ 
+ build() {
+```
+
+- The `makedepends` hunk drops the two libraries; the `prepare()` hunk
+  deletes the three options that need them from the build's `.config`, a
+  copy of the `config` file next to the APKBUILD.
+- EAP-SIM and EAP-AKA stay enabled: `src/utils/pcsc_funcs.h` has no-op
+  stubs when `PCSC_FUNCS` is not defined, so they only lose access to a
+  physical SIM card.
+- The OpenRC service only adds `-u` (D-Bus) when asked to, so with an
+  `/etc/wpa_supplicant/wpa_supplicant.conf` it starts as before.
+
+HOST, in the directory holding `aports` and `alpine-riscv32`, as for the
+other patches:
+
+```sh
+git -C aports am "$PWD"/alpine-riscv32/patches/0013-*.patch
+```
+
+#### Sources and build
+
+CONTAINER `alpine-rv32`, as your user:
+
+```sh
+cd /work/aports
+for p in main/libevent main/tmux main/less main/tree main/ncdu main/coreutils community/bmake community/lowdown community/btop main/libidn2 main/lz4 main/popt main/xxhash main/rsync main/dtc community/i2c-tools community/evtest community/memtester main/dosfstools main/musl-fts community/exfatprogs main/libnl3 main/iw main/wireless-regdb main/wpa_supplicant main/iperf3 main/libmnl main/ethtool main/socat main/lua5.4; do (cd $p && abuild fetch verify) || break; done
+```
+
+CONTAINER `rv32-native`, as your user, with the same two variables as
+above:
+
+```sh
+export ABUILD_BOOTSTRAP=1 APORTS_BOOTSTRAP=1
+cd /work/aports
+for p in main/libevent main/tmux main/less main/tree main/ncdu main/coreutils community/bmake community/lowdown community/btop main/libidn2 main/lz4 main/popt main/xxhash main/rsync main/dtc community/i2c-tools community/evtest community/memtester main/dosfstools main/musl-fts community/exfatprogs main/libnl3 main/iw main/wireless-regdb main/wpa_supplicant main/iperf3 main/libmnl main/ethtool main/socat main/lua5.4; do (cd $p && abuild -r) || break; done
+```
+
+The order follows the dependencies: each library comes right before the
+first package that needs it, and bmake before lowdown before btop.
+
 Done when: nano and dropbear are built in `rv32-native`, and `ssh` into the
 QEMU machine prints `riscv32`.
 Next: step 12, Alpine binaries on the board under Buildroot.

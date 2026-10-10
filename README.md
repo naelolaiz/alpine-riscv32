@@ -46,6 +46,8 @@ Patches 0007 to 0010 trim optional dependencies when bootstrapping, and 0011
 keeps utmps in util-linux's bootstrap build and 0012 builds pcre2 without
 JIT on riscv32, so that python3, htop, vim,
 neofetch and mc build natively too (47 source packages).
+Patch 0013 does the same for wpa_supplicant, which leads a batch of small
+tools (tmux, btop, rsync, dtc, iw and others, 30 source packages).
 Per-package details are
 in [`RISCV32.md`](RISCV32.md); the steps are in [`docs/steps/`](docs/steps/).
 
