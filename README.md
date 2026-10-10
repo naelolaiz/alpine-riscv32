@@ -24,7 +24,8 @@ an OpenRC login, with `apk add` working inside the VM. Beyond that list,
 packages build natively in a riscv32 container run through qemu-user:
 dropbear and nano so far, with dropbear accepting SSH logins in the VM.
 Patches 0007 to 0010 trim optional dependencies when bootstrapping, and 0011
-keeps utmps in util-linux's bootstrap build, so that python3, htop, vim,
+keeps utmps in util-linux's bootstrap build and 0012 builds pcre2 without
+JIT on riscv32, so that python3, htop, vim,
 neofetch and mc build natively too (47 source packages).
 Per-package details are
 in [`RISCV32.md`](RISCV32.md); the steps are in [`docs/steps/`](docs/steps/).
