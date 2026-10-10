@@ -703,15 +703,25 @@ bootstrap rebuilds openssl natively for the same reason. CONTAINER
 ```sh
 export ABUILD_BOOTSTRAP=1 APORTS_BOOTSTRAP=1
 cd /work/aports/main/openssl && abuild -rf
-abuild-apk fix libcrypto3 libssl3
+abuild-apk add /work/.local/share/abuild/main/riscv32/libcrypto3-3.5.9-r0.apk /work/.local/share/abuild/main/riscv32/libssl3-3.5.9-r0.apk
+abuild-apk del libcrypto3 libssl3
 tar -xzOf /work/.local/share/abuild/main/riscv32/openssl-dev-3.5.9-r*.apk usr/include/openssl/configuration.h 2>/dev/null | grep THREADS
 ```
 
 - `-f` forces the build: the package from step 9 has the same version, so
   abuild would otherwise call it up to date.
-- `abuild-apk fix` reinstalls the two libraries in the container from the
-  new packages; with the same version number apk would not replace them on
-  its own. The board needs the same `apk fix` once it gets the new packages.
+- The new packages have the same version as the cross-built ones, so
+  neither `apk upgrade` nor `apk fix` takes them: `fix` reinstalls exactly
+  the installed package, identified by its checksum, and prints `[APK
+  unavailable, skipped]` when the repository only has the new build. Adding
+  the two files makes apk see a different package of the same version, and
+  it replaces the installed one (`Replacing`).
+- Adding a file also writes its checksum into `/etc/apk/world`, which would
+  pin the library. `abuild-apk del` removes those two entries again; the
+  libraries stay installed because other packages depend on them.
+- The board needs the same two commands with `apk` once it gets the new
+  packages, with the path of its copy of the repository and
+  `--repositories-file /dev/null` when the PC is not reachable.
 - The last line prints `OPENSSL_THREADS` and no `OPENSSL_NO_THREADS`.
 
 Then the three groups. `APORTS_BOOTSTRAP=1` switches on the
