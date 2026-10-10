@@ -68,13 +68,17 @@ Commit (both bootstrap.sh fixes together): `scripts/bootstrap.sh: copy keys from
 ```
 
 - `--with-arch`: the default `-march` of the compiler, the instructions it may
-  emit. The ESP32-S31 hart reports `rv32imac_zicsr_zifencei_...`: no F or D.
+  emit. `rv32imac` is the base most RV32 Linux cores share. (The ESP32-S31's stock
+  kernel reports `rv32imac_zicsr_zifencei_...`; the core does have F, without
+  D, but that kernel drops F because it lacks D. Found later, in
+  `esp32s31-alpine` step 20.)
   Since the 2019 ISA spec, CSR access (`zicsr`) and `fence.i` (`zifencei`) are
   separate extensions; `rv64gc` includes them through `g`, `rv32imac` does not,
   so without them any code using CSR instructions fails to assemble.
 - `--with-abi=ilp32`: int, long and pointers are 32 bit, floating-point values
-  are passed in integer registers (soft-float). It is the only ABI possible
-  without an FPU, and the one Espressif's toolchain uses.
+  are passed in integer registers (soft-float). It is the only ABI that runs
+  on cores without an FPU, and the one Espressif's toolchain uses. Why it
+  stays so on the S31's F: README, "Why soft-float".
 - `--enable-autolink-libatomic`: gcc adds `-latomic` (as needed) by itself,
   for the same reason as edit 2.
 

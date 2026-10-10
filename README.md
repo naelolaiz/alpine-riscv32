@@ -15,6 +15,25 @@ result should also run on QEMU, LiteX or any other RV32 Linux system.
 | libc | musl (riscv32 upstream since 1.2.5), time64 |
 | Loader | `/lib/ld-musl-riscv32-sf.so.1` (musl adds `-sf` for the soft-float ABI) |
 
+### Why soft-float, also on cores with an FPU
+
+The ESP32-S31 has the F extension (single precision) but not D; with a kernel
+patched to keep F (see `esp32s31-alpine`, step 20) programs can use it. The
+packages here stay `rv32imac` / `ilp32` anyway:
+
+- `ilp32d` (doubles in FP registers, the 32-bit twin of the `lp64d` that
+  `rv64gc` distributions use) needs D.
+- `ilp32f` (floats in FP registers) would be a second, incompatible port: the
+  linker refuses to mix objects of different float ABIs, so every package
+  would be rebuilt, with its own loader (`ld-musl-riscv32-sp.so.1`). It would
+  only run on cores with F, and mainline Linux turns F off on cores without D.
+- F only computes `float`. `double`, which most C code, awk and Python use,
+  stays a libgcc call (`__muldf3`, `__adddf3`) under `ilp32` and `ilp32f` alike.
+- The float ABI only says where `float` arguments and results travel. A
+  program built with `-march=rv32imafc -mabi=ilp32` already computes in the
+  FPU and still links with these packages; that is how to use F where it
+  matters.
+
 ## Status
 
 The first six patches in `patches/` are enough to cross-build Alpine's bootstrap

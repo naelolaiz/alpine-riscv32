@@ -73,8 +73,8 @@ ls -l arch/riscv/boot/Image
   marked `=m`, which this boot does not need.
 - The kernel compiles C with `-mabi=ilp32` and no F/D instructions, but its
   assembler gets `fd` for saving the FPU state of processes that use it. The
-  soft-float cross gcc from step 8 builds it unchanged. The board's core has no
-  FPU; its own kernel is Espressif's.
+  soft-float cross gcc from step 8 builds it unchanged. The board runs
+  Espressif's kernel instead (its core has F without D, see the README).
 
 ## 4. Let the host run riscv32 programs (binfmt_misc)
 
