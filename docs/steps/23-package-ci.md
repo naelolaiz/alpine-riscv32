@@ -3,8 +3,11 @@
 Steps 8, 9 and 11 build every package on the PC. The workflow in
 [`.github/workflows/packages.yml`](../../.github/workflows/packages.yml) does
 the same on GitHub's machines and publishes the result as an apk repository
-on GitHub Pages. Adding a package then means adding one line (and a patch,
-if its APKBUILD needs an edit) and pushing.
+on GitHub Pages after every run on main. When you ask for one, it also
+publishes the repository as a GitHub release, a dated snapshot like the
+first one, packages-2026-10-10, which was built on the PC and packed by hand. Adding a package
+then means adding one line (and a patch, if its APKBUILD needs an edit) and
+pushing.
 
 It works because a GitHub-hosted runner is an x86_64 Ubuntu virtual machine
 where the workflow has root through `sudo` and Docker: the same containers
@@ -17,12 +20,14 @@ cost nothing; each job may run for at most 6 hours.
 | --- | --- | --- |
 | `cross` | steps 7 to 9 | aports at `aports.commit` plus `patches/`, `bootstrap.sh riscv32`, then `bootstrap.sh riscv32 mdev-conf` |
 | `native` | step 11 | a riscv32 container from those packages; `abuild -r` for every line of [`ci/native-packages.txt`](../../ci/native-packages.txt) |
-| `publish` | step 15's `http.server` | the repository directory, as it is on the PC under `.local/share/abuild`, published on GitHub Pages; main only |
+| `pages` | step 15's `http.server` | the riscv32 part of the repository directory, as it is on the PC under `.local/share/abuild`, published on GitHub Pages; main only, every run |
+| `release` | packing the release by hand | the same directories as one archive in a GitHub release, with the keys and `packages.txt`; main only, and only when you start the run with "release" ticked |
 
-Every run starts by downloading what the last run published. abuild skips
-a package whose `.apk` files already exist, so a run only builds what is new
-or changed. The first run builds everything and takes hours; later runs take
-minutes plus whatever changed.
+Every run starts by downloading what is published: the Pages site, or,
+while it has nothing yet, the newest `packages-*` release (the one built
+on the PC, the first time). abuild skips a package whose `.apk` files already exist, so a
+run only builds what is new or changed. Starting from scratch takes hours;
+a run that changes one package takes minutes plus that package.
 
 ## 1. One-time setup
 
@@ -66,9 +71,14 @@ tests the workflow without any setup.
 
 ### GitHub Pages
 
-Settings, Pages, Build and deployment, Source: GitHub Actions. The
-`publish` job then deploys the repository directory directly. No branch
-holds the packages, so no binary ever enters git history.
+Settings, Pages, Build and deployment, Source: GitHub Actions. The `pages`
+job then deploys the repository directory directly. No branch holds the
+packages, so no binary ever enters git history. Until this is set, the
+`pages` job fails at its last step (`deploy-pages` answers 404), as it did
+on the first run on main.
+
+Releases need no setting: the `release` job may create them because the
+workflow gives it `contents: write`.
 
 ## 2. Run it
 
@@ -77,6 +87,13 @@ workflow file, or start it by hand: Actions tab, riscv32 packages, Run
 workflow. Each step's log is on the run page; the `native` job's summary
 lists every package with its build time, the failures, and any package
 left for the next run.
+
+To make a release: Actions tab, riscv32 packages, Run workflow, branch
+main, tick "release". The run builds whatever is missing, updates Pages,
+and then publishes the release, but only if both build jobs are green and
+no package was left for a later run, so a release is always a complete
+build. When nothing changed since the newest release (same `packages.txt`),
+the `release` job says so in its summary and publishes nothing.
 
 ## 3. How it works, step by step
 
@@ -116,14 +133,40 @@ abuild still checks their sha512.
 ### Published packages (`ci/fetch-published.sh`)
 
 Downloads every file listed in the published `files.txt` into
-`.local/share/abuild`. Then abuild's own test decides what to build: a
-package is up to date when all its `.apk` files exist, none of its sources
-or its APKBUILD is newer, and the index is newer than the `.apk` files.
-The fresh checkout and the restored cache are newer than the download, so
-the build steps first touch every `.apk`, then every `APKINDEX.tar.gz`.
+`.local/share/abuild`. While the site has nothing (`files.txt` answers
+404), it unpacks the archive of the newest `packages-*` release there
+instead, so the first run on main continues from the release built on the
+PC rather than from scratch. Any other error stops the run, because
+going on would rebuild everything and deploy a smaller repository over the
+old one.
+
+The keys come along. A package that is carried over keeps the signature it
+was made with, so the repository mixes keys: the PC's (`-6ac57722.rsa.pub`)
+for what was built on the PC, `alpine-riscv32-ci.rsa.pub` for what the
+workflow builds. apk checks every package's own signature, not just the
+index's, so the step copies every key into `/etc/apk/keys` of
+`alpine-rv32` (`bootstrap.sh` copies that directory into its sysroot), and
+the native job puts them into the riscv32 container. The board needs both
+keys too, and both are published.
+
+Then abuild's own test decides what to build: a package is up to date
+when all its `.apk` files exist, none of its sources or its APKBUILD is
+newer, and the index is newer than the `.apk` files. The fresh checkout
+and the restored cache are newer than the download, so the build steps
+first touch every `.apk`, then every `APKINDEX.tar.gz`.
 
 Consequence: a change to an APKBUILD that keeps the version is not rebuilt.
 Bump `pkgrel`, the rule aports follows anyway.
+
+### Cross compiler (cache)
+
+`bootstrap.sh` first builds the x86_64 cross compiler (binutils, gcc and
+build-base for riscv32) into `main/x86_64`. It is of no use on a board, so
+neither Pages nor the releases carry it; `actions/cache` keeps it instead.
+Its key is a hash of the binutils, gcc and build-base directories in
+aports, so a change to one of them builds it again (about an hour). If
+GitHub drops the cache (after 7 days unused, or when the repository's
+caches pass 10 GB), the next run builds it again as well.
 
 ### Cross job
 
@@ -147,22 +190,51 @@ up to date and both calls take a minute.
    published, and the job ends red. After `budget-minutes` (300 by default)
    it starts no new package, so there is time left to publish; the next run
    continues where this one stopped.
+5. `main/openssl` carries the option `rebuild-if-cross`. The openssl that
+   `bootstrap.sh` cross-builds has no thread support, which python3's ssl
+   module needs (step 11, section 8). The script reads
+   `usr/include/openssl/configuration.h` from the `openssl-dev` package in
+   the repository; if it says `OPENSSL_NO_THREADS`, it builds openssl again
+   natively with `abuild -r -f` (same version) and installs the new
+   `libcrypto3` and `libssl3` in the container from their files, since apk
+   would keep the installed ones of the same version. The first release
+   already has the native openssl, so this happens only after a build from scratch.
 
-### Publish job
+### Pages job
 
-Writes `files.txt` and a small `index.html`, then deploys. The site is the
+Removes `x86_64/`, writes `files.txt` and a small `index.html` (the keys and
+the lines for `/etc/apk/repositories`), then deploys. The site is the
 repository directory, so its layout is the one apk expects:
 `https://naelolaiz.github.io/alpine-riscv32/main/riscv32/APKINDEX.tar.gz`,
-with the public key at the top. It runs after a failure too, so finished
-packages are not lost.
+with the public keys at the top. It runs after a failed build too, so
+finished packages are not lost, but not when a step before the builds
+failed: that repository could lack what was published, and the deploy
+would remove it from the site.
 
-Why Pages and not a GitHub release: apk appends `/<arch>/APKINDEX.tar.gz`
-to the repository URL and fetches packages next to the index, while a
-release is a flat list of files. GitHub's API documentation also says it
-renames uploaded release files with special characters, and `libstdc++` and
-`g++` contain `+` (not tested whether `+` counts). A Pages deploy
-also replaces the whole site at once, so a board never sees a new index
-next to missing packages.
+### Release job (`ci/make-release.sh`)
+
+Packs `main`, `community` and `testing` for riscv32 into
+`alpine-riscv32-packages-DATE.tar.gz`, lists every package as
+`name version repository` in `packages.txt` (from the signed indexes),
+and creates the release `packages-DATE` (`-2`, `-3` if that tag exists)
+with the archive, the keys and `packages.txt`. The notes list what is new
+or rebuilt and what is gone since the previous release, which commit and
+patches it was built from, and how to install it.
+
+### Pages and releases
+
+They do different jobs, so the workflow publishes both:
+
+- Pages is an apk repository. apk appends `/<arch>/APKINDEX.tar.gz` to a
+  repository URL and fetches packages next to the index, so a board with
+  network downloads only the index and what changed. A deploy replaces the
+  whole site at once, so a board never sees a new index next to missing
+  packages. It keeps no history, and a site may hold at most 1 GB.
+- A release is a flat list of files, so apk cannot use it as a repository;
+  the archive inside it can, once unpacked. It keeps every earlier
+  snapshot, allows 2 GiB per file, and is the easiest way onto the stick
+  while the board has no network. It is made only on request, so the list
+  of releases stays a list of versions you chose.
 
 ## 4. Adding a package
 
@@ -183,30 +255,79 @@ artifact on the run page.
 
 ## 5. On the board
 
-The packages go onto the stick, as long as the board has no network. HOST,
-with the stick in the PC. Mounting by label avoids guessing the device
-name, which differs between the PC and the board:
+The board takes the packages from local directories on the stick while it
+has no network, and from Pages once Wi-Fi works. Either way, apk finds them
+through `/etc/apk/repositories`, so plain `apk add` and `apk upgrade` work
+without `-X` flags.
+
+### From a release, on the stick
+
+HOST, in the directory you downloaded the release files to, with the stick
+in the PC. Mounting by label avoids guessing the device name, which
+differs between the PC and the board; removing the old `root/repo` drops
+the packages the new release replaces:
 
 ```sh
 sudo mount LABEL=alpine-root /mnt
-curl -fsSL https://naelolaiz.github.io/alpine-riscv32/files.txt | grep -e '/riscv32/' -e '\.rsa\.pub$' | sed 's|^|https://naelolaiz.github.io/alpine-riscv32/|' | sudo wget -q -x -nH --cut-dirs=1 -P /mnt/root/ci-packages -i -
+sudo cp ./*.rsa.pub /mnt/etc/apk/keys/
+sudo rm -rf /mnt/root/repo
+sudo mkdir -p /mnt/root/repo
+sudo tar -xzf alpine-riscv32-packages-2026-10-10.tar.gz -C /mnt/root/repo
 sudo umount /mnt
 ```
 
-- `grep` keeps the riscv32 packages and the key; the cross compiler in
-  `x86_64/` is of no use on the board.
-- `-x -nH --cut-dirs=1` keeps the path below the site (`main/riscv32/...`),
-  which is the layout apk expects.
+- `./*.rsa.pub` copies both keys; the `./` keeps `cp` from reading
+  `-6ac57722.rsa.pub` as an option.
+- Use the archive name of the release you downloaded.
 
-BOARD, as root, after booting from the stick:
+BOARD, as root, after booting from the stick. The first command is needed
+once: apk reads local repository directories directly, with no
+`apk update`:
 
 ```sh
-cp /root/ci-packages/alpine-riscv32-ci.rsa.pub /etc/apk/keys/
-apk add --repositories-file /dev/null --repository /root/ci-packages/main nano
+printf '/root/repo/main\n/root/repo/community\n/root/repo/testing\n' > /etc/apk/repositories
+apk upgrade
+apk add htop
 ```
 
-`--repositories-file /dev/null` leaves out the PC's server from step 15,
-which the board cannot reach without the cable.
+The file replaces the line for the PC's server from step 15, which the
+board cannot reach without the cable.
+
+### The newest packages from Pages, on the stick
+
+Pages has what the last run built, also between releases. HOST, in any
+directory, with the stick in the PC:
+
+```sh
+sudo mount LABEL=alpine-root /mnt
+sudo rm -rf /mnt/root/repo
+curl -fsSL https://naelolaiz.github.io/alpine-riscv32/files.txt | grep -e '/riscv32/' -e '\.rsa\.pub$' | sed 's|^|https://naelolaiz.github.io/alpine-riscv32/|' | sudo wget -q -x -nH --cut-dirs=1 -P /mnt/root/repo -i -
+sudo sh -c 'cp /mnt/root/repo/*.rsa.pub /mnt/etc/apk/keys/'
+sudo umount /mnt
+```
+
+- `rm -rf` first, because wget would save a second copy (`.1`) next to a
+  file that is already there.
+- `grep` keeps the riscv32 packages and the keys.
+- `-x -nH --cut-dirs=1` keeps the path below the site (`main/riscv32/...`),
+  the layout apk expects, so the board's `/etc/apk/repositories` from above
+  stays the same.
+- `sh -c`: `/mnt/root` is readable by root only, so the `*` must be
+  expanded by a root shell, not by yours.
+
+### Over the network (Wi-Fi, later)
+
+BOARD, as root. The board needs a roughly correct clock to accept the
+github.io certificate:
+
+```sh
+printf 'https://naelolaiz.github.io/alpine-riscv32/main\nhttps://naelolaiz.github.io/alpine-riscv32/community\nhttps://naelolaiz.github.io/alpine-riscv32/testing\n' > /etc/apk/repositories
+apk update
+apk upgrade
+```
+
+`apk update` downloads the three indexes; the keys are in `/etc/apk/keys`
+already from the stick.
 
 ## Tested so far
 
@@ -219,20 +340,30 @@ A branch run without the secret (temporary key, built from scratch, run
   in 1 h 38 min under qemu-user (dropbear alone 6 min).
 - 234 files, 360 MB with the x86_64 cross compiler.
 
-Not tested yet, because they need the secret, Pages and main:
+The first run on main (37824031688, 2026-10-09) built the same with the
+secret's key (cross 71 min, native 2 h 48 min) and failed only at
+`deploy-pages`, because Pages was not switched on.
 
-- The `publish` job and the site layout.
-- A second run starting from the published packages (`fetch-published.sh`
-  and the timestamp rule), which should skip everything already built.
-- Installing from the site on the board.
+Not tested yet:
+
+- Starting from the first release (`fetch-published.sh`'s fallback) and the
+  mixed keys: the next run, on this branch or on main, does that.
+- The `pages` deploy and installing from the site on the board.
+- The `release` job.
+- How long python3 takes on the runners: the first release has it, so no run
+  builds it until its `pkgrel` changes. Its PGO build might not fit the
+  native job's 6 hours together with other packages.
 
 ## Known limits
 
 - `alpine:edge` changes every day; a future edge may no longer build the
   pinned aports commit, as it would on the PC.
 - Old versions stay in the repository after a `pkgrel` bump; nothing prunes
-  them yet. GitHub Pages allows 1 GB per site.
+  them yet (the first release has pcre2 r0 and r1). GitHub Pages allows 1 GB per
+  site; the riscv32 repositories are about 0.5 GB now.
 - A new signing key needs a full rebuild, and the workflow has no switch for
   that yet: the old packages would fail apk's signature check.
 - Over HTTPS (Wi-Fi later), the board needs a roughly correct clock to accept
   the github.io certificate.
+- A release made by hand after the workflow has deployed Pages is not
+  picked up: runs start from Pages once it has packages.

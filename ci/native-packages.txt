@@ -5,6 +5,10 @@
 #
 # To add a package: add its line after its dependencies; if its APKBUILD
 # needs an edit, add the patch to patches/ in the same push.
+#
+# A second word on a line is an option for ci/native-build.sh:
+#   rebuild-if-cross  build it again natively if the package in the
+#                     repository is bootstrap.sh's cross build (openssl)
 
 # step 11, section 5
 main/ncurses
@@ -23,3 +27,60 @@ main/m4
 main/autoconf
 main/automake
 main/dropbear
+
+# step 11, section 8: openssl again, natively. Cross-built, it has no thread
+# support, and python3's ssl module refuses it
+main/openssl rebuild-if-cross
+
+# step 11, section 8, group 1: python3 and its libraries
+main/expat
+main/bluez-headers
+main/libffi
+main/mpdecimal
+main/chrpath
+main/readline
+main/sqlite
+main/tcl
+main/diffutils
+main/help2man
+main/libtool
+main/gettext-tiny
+main/xz
+main/python3
+
+# group 2: htop, vim, neofetch
+main/bison
+main/flex
+main/bash
+main/lsof
+main/htop
+community/vim
+testing/neofetch
+
+# group 3: mc and its chain
+main/libedit
+main/pcre2
+main/swig
+main/libcap-ng
+main/util-linux
+main/gawk
+main/e2fsprogs
+main/libxml2
+main/libunistring
+main/gettext
+main/py3-installer
+main/py3-flit-core
+main/py3-gpep517
+main/py3-parsing
+main/py3-packaging
+main/samurai
+main/py3-setuptools
+main/py3-wheel
+main/meson
+main/glib
+main/libssh2
+main/libpng
+main/oniguruma
+main/slang
+main/gpm
+main/mc

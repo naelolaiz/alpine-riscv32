@@ -1,13 +1,17 @@
 # Builds the riscv32 packages from aports.commit + patches/ and publishes
-# them as an apk repository on GitHub Pages. The guide is
-# docs/steps/23-package-ci.md; every step below says what it does and why.
+# them as an apk repository on GitHub Pages; when asked to, also as a GitHub
+# release. The guide is docs/steps/23-package-ci.md; every step below says
+# what it does and why.
 #
-# Three jobs, each on a fresh x86_64 Ubuntu machine ("runner"):
+# Four jobs, each on a fresh x86_64 Ubuntu machine ("runner"):
 #   cross    steps 8 and 9: bootstrap.sh cross-builds the toolchain and base
 #   native   step 11: builds ci/native-packages.txt in a riscv32 container
-#   publish  puts the result on GitHub Pages (main only)
-# Each run starts from what the previous run published, so only new or
-# changed packages (new pkgver or pkgrel) are built.
+#   pages    puts the repository on GitHub Pages (main only, every run)
+#   release  publishes it as a GitHub release (main only, and only when the
+#            run was started by hand with "release" ticked)
+# Each run starts from what Pages has (while it has nothing, from the
+# newest packages-* release), so only new or changed packages (new pkgver
+# or pkgrel) are built.
 
 name: riscv32 packages
 
@@ -23,12 +27,16 @@ on:
       budget-minutes:
         description: Minutes the native job may start new packages for
         default: "300"
+      release:
+        description: Also publish the packages as a GitHub release (main only)
+        type: boolean
+        default: false
 
 permissions:
   contents: read
 
-# Runs on main wait for each other, because each publishes on top of the
-# previous one. On other branches a new push cancels the older run.
+# Runs on main wait for each other, because each builds on top of what the
+# previous one published. On other branches a new push cancels the older run.
 concurrency:
   group: packages-${{ github.ref }}
   cancel-in-progress: ${{ github.ref != 'refs/heads/main' }}
@@ -78,11 +86,30 @@ jobs:
       - name: Download sources from other copies
         run: alpine-riscv32/ci/prefetch-sources.sh
 
+      # bootstrap.sh builds this x86_64 cross compiler first. It is of no
+      # use on a board, so Pages and the releases leave it out; it is kept
+      # here instead. The key changes when an APKBUILD it is built from
+      # changes. Not with a temporary key: apk would not trust its index.
+      - name: Restore the cross compiler
+        id: toolchain
+        if: steps.prepare.outputs.temporary-key == 'false'
+        uses: actions/cache/restore@v4
+        with:
+          path: .local/share/abuild/main/x86_64
+          key: toolchain-x86_64-${{ hashFiles('aports/main/binutils/*', 'aports/main/gcc/*', 'aports/main/build-base/*') }}
+
       # Skipped with a temporary key: its packages would not be signed by the
-      # key the published ones are
+      # key the published ones are. apk checks every package's own signature,
+      # and packages carried over keep the key they were signed with, so the
+      # container trusts every key that comes with them; bootstrap.sh copies
+      # /etc/apk/keys into its sysroot.
       - name: Download the published packages
         if: steps.prepare.outputs.temporary-key == 'false'
-        run: alpine-riscv32/ci/fetch-published.sh "${PACKAGES_URL:-https://${GITHUB_REPOSITORY_OWNER,,}.github.io/${GITHUB_REPOSITORY#*/}}" .local/share/abuild
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          alpine-riscv32/ci/fetch-published.sh "${PACKAGES_URL:-https://${GITHUB_REPOSITORY_OWNER,,}.github.io/${GITHUB_REPOSITORY#*/}}" .local/share/abuild
+          docker exec alpine-rv32 sh -c 'cp /work/.local/share/abuild/*.rsa.pub /etc/apk/keys/ && ls /etc/apk/keys/'
 
       # abuild skips a package when its .apk files exist and are newer than
       # the APKBUILD and its sources, and the index is newer than the .apk
@@ -113,12 +140,24 @@ jobs:
           path: .cache/distfiles
           key: distfiles-cross-${{ github.run_id }}-${{ github.run_attempt }}
 
-      # Even after a failure: what was built is kept, and published on main,
-      # so the next run continues from there instead of from scratch.
-      # .apk files are already compressed.
+      - name: Save the cross compiler
+        if: >-
+          steps.bootstrap.outcome == 'success'
+          && steps.prepare.outputs.temporary-key == 'false'
+          && steps.toolchain.outputs.cache-hit != 'true'
+        uses: actions/cache/save@v4
+        with:
+          path: .local/share/abuild/main/x86_64
+          key: ${{ steps.toolchain.outputs.cache-primary-key }}
+
+      # Even after a failed build: what was built is kept, and published on
+      # main, so the next run continues from there instead of from scratch.
+      # Not when an earlier step failed (the bootstrap step then never ran):
+      # the repository could be missing what was published, and Pages
+      # would lose it. .apk files are already compressed.
       - name: Hand the repository to the next job
         id: upload
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && steps.bootstrap.outcome != 'skipped' }}
         uses: actions/upload-artifact@v4
         with:
           name: repo
@@ -148,6 +187,7 @@ jobs:
     timeout-minutes: 360
     outputs:
       uploaded: ${{ steps.upload.outcome == 'success' }}
+      left: ${{ steps.build.outputs.left }}
     steps:
       - uses: actions/checkout@v5
         with:
@@ -213,10 +253,12 @@ jobs:
 
       # Step 11, sections 2 and 3, with docker instead of podman: a riscv32
       # tree from the cross-built packages, imported as an image, run with
-      # /work mounted and a user with the runner's uid
+      # /work mounted and a user with the runner's uid. It trusts every key
+      # in the repository directory: this run's and those of packages
+      # carried over from earlier ones.
       - name: Build the riscv32 build container
         run: |
-          docker exec alpine-rv32 sh -c 'mkdir -p /var/tmp/rv32-native/etc/apk/keys && cp /work/.config/abuild/*.rsa.pub /var/tmp/rv32-native/etc/apk/keys/'
+          docker exec alpine-rv32 sh -c 'mkdir -p /var/tmp/rv32-native/etc/apk/keys && cp /work/.local/share/abuild/*.rsa.pub /var/tmp/rv32-native/etc/apk/keys/'
           docker exec alpine-rv32 apk add -q --root /var/tmp/rv32-native --initdb --arch riscv32 --repository /work/.local/share/abuild/main alpine-baselayout busybox busybox-binsh apk-tools abuild build-base
           docker exec alpine-rv32 sh -c 'echo /work/.local/share/abuild/main > /var/tmp/rv32-native/etc/apk/repositories'
           docker exec alpine-rv32 tar -C /var/tmp/rv32-native -cf - . | docker import - rv32-native
@@ -248,10 +290,12 @@ jobs:
           path: .cache/distfiles
           key: distfiles-native-${{ github.run_id }}-${{ github.run_attempt }}
 
-      # Replaces the cross job's artifact, so publish takes the newest
-      - name: Hand the repository to the publish job
+      # Replaces the cross job's artifact, so pages and release take the
+      # newest. Not when the build step never ran: the cross job's artifact
+      # stays then, and it is complete.
+      - name: Hand the repository to the publishing jobs
         id: upload
-        if: ${{ !cancelled() }}
+        if: ${{ !cancelled() && steps.build.outcome != 'skipped' }}
         uses: actions/upload-artifact@v4
         with:
           name: repo
@@ -265,10 +309,10 @@ jobs:
         if: steps.build.outcome != 'success'
         run: exit 1
 
-  # Runs after a failure too, so what was built is not lost; never with a
-  # temporary key, and only on main (the github-pages environment allows
-  # only main anyway)
-  publish:
+  # Runs after a failed build too, so what was built is not lost; never
+  # with a temporary key, and only on main (the github-pages environment
+  # allows only main anyway)
+  pages:
     needs: [cross, native]
     if: >-
       ${{ !cancelled() && github.ref == 'refs/heads/main'
@@ -287,13 +331,19 @@ jobs:
           name: repo
           path: site
 
-      # files.txt lists every file, because a static site has no directory
-      # listing: the next run and the PC download from it
-      - name: Add the file list and a front page
+      # The cross compiler (x86_64) is of no use on a board and is cached
+      # by the cross job instead. files.txt lists every file, because a
+      # static site has no directory listing: the next run and the PC
+      # download from it.
+      - name: Leave out the cross compiler, add the file list and a front page
         run: |
           url=${PACKAGES_URL:-https://${GITHUB_REPOSITORY_OWNER,,}.github.io/${GITHUB_REPOSITORY#*/}}
           cd site
+          rm -rf ./*/x86_64
           find . -type f | sed 's|^\./||' | sort > files.txt
+          keys=
+          for k in *.rsa.pub; do keys="$keys <a href=\"$k\">$k</a>"; done
+          repos=$(for r in */riscv32/APKINDEX.tar.gz; do echo "$url/${r%%/*}"; done)
           cat > index.html <<EOF
           <!doctype html>
           <meta charset="utf-8">
@@ -302,9 +352,10 @@ jobs:
           <p>Alpine packages for riscv32, built by GitHub Actions from
           <a href="https://github.com/${GITHUB_REPOSITORY}">${GITHUB_REPOSITORY}</a>
           at commit ${GITHUB_SHA}.</p>
-          <p>Signing key: <a href="alpine-riscv32-ci.rsa.pub">alpine-riscv32-ci.rsa.pub</a>.
-          Repository line for /etc/apk/repositories: <code>${url}/main</code>.
-          Every file: <a href="files.txt">files.txt</a>.</p>
+          <p>Signing keys, for /etc/apk/keys on the board:${keys}.</p>
+          <p>Lines for /etc/apk/repositories:</p>
+          <pre>${repos}</pre>
+          <p>Every file: <a href="files.txt">files.txt</a>.</p>
           EOF
           du -sh .
           wc -l files.txt
@@ -315,3 +366,32 @@ jobs:
 
       - id: deploy
         uses: actions/deploy-pages@v4
+
+  # A snapshot for download, made only when asked for (Actions tab, riscv32
+  # packages, Run workflow, "release" ticked) and only from a complete
+  # build: both build jobs green and no package left for a later run
+  release:
+    needs: [cross, native]
+    if: >-
+      ${{ github.event_name == 'workflow_dispatch' && inputs.release
+      && github.ref == 'refs/heads/main'
+      && needs.cross.outputs.temporary-key == 'false'
+      && needs.native.outputs.left == '0' }}
+    runs-on: ubuntu-24.04
+    permissions:
+      contents: write
+    steps:
+      # For the release notes: aports.commit and the patch numbers
+      - uses: actions/checkout@v5
+        with:
+          path: alpine-riscv32
+
+      - uses: actions/download-artifact@v4
+        with:
+          name: repo
+          path: repo
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: alpine-riscv32/ci/make-release.sh repo
