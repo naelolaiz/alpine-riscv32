@@ -59,6 +59,8 @@ while read -r p opt _; do
 	echo "::endgroup::"
 done < <(sed -e 's/#.*//' "$list")
 
+# The summary page and the job log both get the list: the log can be read
+# without a browser (the GitHub API returns it, not the summary page)
 {
 	echo "## Native riscv32 builds"
 	echo
@@ -74,7 +76,7 @@ done < <(sed -e 's/#.*//' "$list")
 		echo "Not started, time budget used up (run the workflow again to continue): ${#left[@]}"
 		for p in "${left[@]}"; do echo "- $p"; done
 	fi
-} >> "${GITHUB_STEP_SUMMARY:-/dev/stdout}"
+} | tee -a "${GITHUB_STEP_SUMMARY:-/dev/null}"
 
 # The release job runs only when nothing was left
 echo "left=${#left[@]}" >> "${GITHUB_OUTPUT:-/dev/null}"
