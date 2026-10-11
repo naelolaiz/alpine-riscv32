@@ -149,3 +149,8 @@ main/pcre
 main/nmap
 main/openssh
 main/gdb
+
+# step 11, section 8, lm-sensors (patch 0019), for the ESP32-S31 temperature
+# sensor (esp32s31-alpine step 22b)
+main/sysfsutils
+main/lm-sensors

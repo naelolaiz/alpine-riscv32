@@ -51,6 +51,7 @@ tools (tmux, btop, rsync, dtc, iw and others, 30 source packages), and
 0014 lets dtc's Python binding build with SWIG 4.5.
 Patches 0015 to 0018 (cmake, elfutils, git, gdb) bring cmake, curl, git,
 wget, gdb, tcpdump, iproute2, nmap and openssh down to 27 more.
+Patch 0019 builds lm-sensors without its `sensord` daemon.
 Per-package details are
 in [`RISCV32.md`](RISCV32.md); the steps are in [`docs/steps/`](docs/steps/).
 
