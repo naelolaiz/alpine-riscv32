@@ -35,5 +35,6 @@ Failure classes: Alpine, upstream package, RV32, toolchain, kernel, board, memor
 | git | patched (0017), native build pending | Alpine | 2.56.0-r0; xmlto only for the full build (man pages) |
 | gdb | patched (0018), native build pending | Alpine | 16.3-r4; no gdb-multiarch and no debuginfod when bootstrapping; riscv32 native support not tried yet |
 | curl, wget, tcpdump, iproute2, nmap, openssh | native build pending (step 11, section 8) | | no change needed. Libraries: libarchive, libuv, rhash, groff, brotli, c-ares, libpsl, libev, nghttp2, perl-error, argp-standalone, musl-obstack, libpcap, jansson, libnftnl, iptables, pcre |
+| lm-sensors | patched (0019), native build pending | Alpine | 3.6.2-r0; no `sensord` daemon when bootstrapping (its RRDtool pulls in cairo, pango and glib). Needs sysfsutils (2.1.1-r3, no change needed) |
 | strace | not supported | upstream package | strace has no riscv32 port (`src/linux/` has riscv64 only) |
 | bootstrap.sh | patched (0001) | Alpine | key path from `ABUILD_USERDIR` (generic bug); libatomic dependency for riscv32; its default list lacks mdev-conf, which alpine-base needs (generic gap, built by hand in step 9) |

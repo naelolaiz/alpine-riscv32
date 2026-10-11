@@ -974,6 +974,45 @@ The order follows the dependencies: cmake first, because brotli and
 c-ares build with it, then curl's libraries, curl, git; elfutils before
 iproute2 and gdb; libpcap before tcpdump and nmap.
 
+### lm-sensors
+
+`sensors` and `libsensors`, for the temperature sensor of the ESP32-S31
+(esp32s31-alpine step 22b). One edit, patch 0019: lm-sensors builds without
+its `sensord` daemon when bootstrapping. sensord logs readings with RRDtool,
+whose package pulls in cairo, pango and glib; `sensors`, `libsensors`,
+`sensors-detect` and `fancontrol` do not use it. The only new dependency is
+sysfsutils, which needs no change.
+
+HOST, in the directory holding `aports` and `alpine-riscv32`:
+
+```sh
+git -C aports am "$PWD"/alpine-riscv32/patches/0019-*.patch
+```
+
+CONTAINER `alpine-rv32`, as your user:
+
+```sh
+cd /work/aports
+for p in main/sysfsutils main/lm-sensors; do (cd $p && abuild fetch verify) || break; done
+```
+
+CONTAINER `rv32-native`, as your user:
+
+```sh
+export ABUILD_BOOTSTRAP=1 APORTS_BOOTSTRAP=1
+cd /work/aports
+for p in main/sysfsutils main/lm-sensors; do (cd $p && abuild -r) || break; done
+```
+
+sysfsutils comes first: it is in lm-sensors' `depends`, and abuild installs
+those before building.
+
+htop stays without sensors (patch 0008). htop only reads temperatures from
+chips whose name is in its list (`tempDrivers` in htop 3.5.3's
+`linux/LibSensors.c`: `coretemp`, `cpu_thermal`, `k10temp` and others), so a
+rebuild against `lm-sensors-dev` would not show the ESP32-S31's
+`esp32s31_tsens`.
+
 Done when: nano and dropbear are built in `rv32-native`, and `ssh` into the
 QEMU machine prints `riscv32`.
 Next: step 12, Alpine binaries on the board under Buildroot.
