@@ -30,5 +30,10 @@ Failure classes: Alpine, upstream package, RV32, toolchain, kernel, board, memor
 | wpa_supplicant | patched (0013), native build pending | Alpine | 2.11-r4; no D-Bus control interface and no PC/SC when bootstrapping. Needs libnl3 |
 | dtc | patched (0014), native build pending | Alpine | 1.7.2-r1; pylibfdt uses two Python 2 names that SWIG 4.5 no longer maps (fails on every arch) |
 | tmux, less, tree, ncdu, btop, rsync, i2c-tools, evtest, memtester, dosfstools, exfatprogs, iw, wireless-regdb, iperf3, ethtool, socat, lua5.4 | native build pending (step 11, section 8) | | no change needed. Libraries and build tools: libevent, coreutils, bmake, lowdown, libidn2, lz4, popt, xxhash, musl-fts, libnl3, libmnl |
-| curl, iproute2, strace, gdb | deferred | | natively they need about 145 more source packages (python3, cmake with its sphinx manual, elfutils, util-linux, glib); waits for patches that drop documentation-only and optional dependencies when bootstrapping |
+| cmake | patched (0015), native build pending | Alpine | 4.3.4-r0; no sphinx man pages when bootstrapping |
+| elfutils | patched (0016), native build pending | Alpine | 0.195-r0; no debuginfod client or server when bootstrapping |
+| git | patched (0017), native build pending | Alpine | 2.56.0-r0; xmlto only for the full build (man pages) |
+| gdb | patched (0018), native build pending | Alpine | 16.3-r4; no gdb-multiarch and no debuginfod when bootstrapping; riscv32 native support not tried yet |
+| curl, wget, tcpdump, iproute2, nmap, openssh | native build pending (step 11, section 8) | | no change needed. Libraries: libarchive, libuv, rhash, groff, brotli, c-ares, libpsl, libev, nghttp2, perl-error, argp-standalone, musl-obstack, libpcap, jansson, libnftnl, iptables, pcre |
+| strace | not supported | upstream package | strace has no riscv32 port (`src/linux/` has riscv64 only) |
 | bootstrap.sh | patched (0001) | Alpine | key path from `ABUILD_USERDIR` (generic bug); libatomic dependency for riscv32; its default list lacks mdev-conf, which alpine-base needs (generic gap, built by hand in step 9) |
