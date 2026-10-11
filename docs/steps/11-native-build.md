@@ -809,8 +809,8 @@ for p in main/libedit main/pcre2 main/swig main/libcap-ng main/util-linux main/g
 
 ### Small tools and Wi-Fi
 
-Built after the five above, these need 30 source packages and one edit,
-patch 0013 for wpa_supplicant:
+Built after the five above, these need 30 source packages and two edits:
+patch 0013 for wpa_supplicant and patch 0014 for dtc:
 
 - everyday: tmux, less, tree, ncdu, btop, rsync
 - board and hardware: dtc, i2c-tools, evtest, memtester, dosfstools,
@@ -869,11 +869,38 @@ and `:65`:
 - The OpenRC service only adds `-u` (D-Bus) when asked to, so with an
   `/etc/wpa_supplicant/wpa_supplicant.conf` it starts as before.
 
+#### Edit 8: dtc and SWIG 4.5 (patch 0014)
+
+dtc also builds pylibfdt, its Python binding, with SWIG. SWIG 4.5 (aports
+upgraded to it after the last dtc rebuild) no longer maps the Python 2
+names `PyInt_AsLong` and `PyString_FromString` to their Python 3
+functions, and `pylibfdt/libfdt.i` still uses them, so the first CI build
+stopped with `implicit declaration of function 'PyInt_AsLong'`. The patch
+makes `prepare()` in `aports/main/dtc/APKBUILD:24` swap them for
+`PyLong_AsLong` and `PyUnicode_FromString`, the functions SWIG used to map
+them to:
+
+```diff
+@@ -25,6 +25,11 @@ prepare() {
+ 	default_prepare
+ 	sed -i s:-Werror::g "$builddir"/Makefile
+ 	sed -i "s|@VERSION@|$pkgver|" setup.py
++	# SWIG 4.5 no longer maps these Python 2 names to Python 3
++	# functions, and pylibfdt's typemaps still use them
++	sed -i -e 's/PyInt_AsLong/PyLong_AsLong/' \
++		-e 's/PyString_FromString/PyUnicode_FromString/' \
++		pylibfdt/libfdt.i
+ }
+```
+
+Nothing here is specific to riscv32: an x86_64 rebuild of dtc fails the
+same way.
+
 HOST, in the directory holding `aports` and `alpine-riscv32`, as for the
 other patches:
 
 ```sh
-git -C aports am "$PWD"/alpine-riscv32/patches/0013-*.patch
+git -C aports am "$PWD"/alpine-riscv32/patches/001[34]-*.patch
 ```
 
 #### Sources and build

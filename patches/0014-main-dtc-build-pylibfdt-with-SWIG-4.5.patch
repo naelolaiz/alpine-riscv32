@@ -1,0 +1,36 @@
+From 9fd10b0d9207816a8e8f90b20523746b395a8c08 Mon Sep 17 00:00:00 2001
+From: naelolaiz <1333555+naelolaiz@users.noreply.github.com>
+Date: Sun, 11 Oct 2026 03:16:36 +0000
+Subject: [PATCH 14/14] main/dtc: build pylibfdt with SWIG 4.5
+
+SWIG 4.5 no longer defines PyInt_AsLong and PyString_FromString, which
+older releases mapped to PyLong_AsLong and PyUnicode_FromString for
+Python 3. pylibfdt/libfdt.i still uses them in two typemaps, so the
+generated wrapper fails to compile ("implicit declaration of function
+'PyInt_AsLong'"). Use the Python 3 functions directly.
+
+Not specific to riscv32: any rebuild of dtc against swig 4.5.0 fails
+the same way.
+---
+ main/dtc/APKBUILD | 5 +++++
+ 1 file changed, 5 insertions(+)
+
+diff --git a/main/dtc/APKBUILD b/main/dtc/APKBUILD
+index 70cc231f64b..c4a38d6d7d5 100644
+--- a/main/dtc/APKBUILD
++++ b/main/dtc/APKBUILD
+@@ -25,6 +25,11 @@ prepare() {
+ 	default_prepare
+ 	sed -i s:-Werror::g "$builddir"/Makefile
+ 	sed -i "s|@VERSION@|$pkgver|" setup.py
++	# SWIG 4.5 no longer maps these Python 2 names to Python 3
++	# functions, and pylibfdt's typemaps still use them
++	sed -i -e 's/PyInt_AsLong/PyLong_AsLong/' \
++		-e 's/PyString_FromString/PyUnicode_FromString/' \
++		pylibfdt/libfdt.i
+ }
+ 
+ build() {
+-- 
+2.43.0
+
