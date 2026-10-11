@@ -118,7 +118,10 @@ main/ethtool
 main/socat
 main/lua5.4
 
-# step 11, section 8, developer and network tools (patches 0014 to 0017)
+# asked for on the board; needs only zlib from the base
+community/sudo
+
+# step 11, section 8, developer and network tools (patches 0015 to 0018)
 main/libarchive
 main/libuv
 main/rhash
