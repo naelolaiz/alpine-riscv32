@@ -1,0 +1,77 @@
+From 2895030ed4fd923f6d59691d9824ab4e902a2fc9 Mon Sep 17 00:00:00 2001
+From: naelolaiz <1333555+naelolaiz@users.noreply.github.com>
+Date: Sun, 11 Oct 2026 14:52:20 +0000
+Subject: [PATCH 19/19] main/lm-sensors: no sensord when bootstrapping
+
+With BOOTSTRAP or APORTS_BOOTSTRAP set, build lm-sensors without the
+sensord daemon and leave out rrdtool-dev: sensord stores its readings
+with RRDtool, whose package pulls in cairo, pango and glib. sensors,
+libsensors, sensors-detect and fancontrol do not use it.
+
+The Makefile builds programs listed in PROG_EXTRA in addition to the
+default ones; passing it empty to user_install builds exactly the
+default set. The lm-sensors-sensord and lm-sensors-sensord-openrc
+subpackages are only declared when sensord is built.
+
+Without the variables the APKBUILD builds exactly what it built before.
+Generic, not specific to riscv32.
+---
+ main/lm-sensors/APKBUILD | 20 +++++++++++++++-----
+ 1 file changed, 15 insertions(+), 5 deletions(-)
+
+diff --git a/main/lm-sensors/APKBUILD b/main/lm-sensors/APKBUILD
+index 691333b..68cc842 100644
+--- a/main/lm-sensors/APKBUILD
++++ b/main/lm-sensors/APKBUILD
+@@ -10,7 +10,7 @@ provides="lm_sensors=$pkgver-r$pkgrel"
+ options="!check"  # No test suite.
+ license="LGPL-2.1-or-later AND GPL-2.0-or-later"  # libs are LGPL, binaries are GPL
+ depends="sysfsutils"
+-makedepends="bash perl rrdtool-dev bison flex"
++makedepends="bash perl bison flex"
+ subpackages="
+ 	$pkgname-detect
+ 	$pkgname-dev
+@@ -18,9 +18,17 @@ subpackages="
+ 	$pkgname-fancontrol::noarch
+ 	$pkgname-fancontrol-openrc:fancontrol_openrc
+ 	$pkgname-libs
+-	$pkgname-sensord
+-	$pkgname-sensord-openrc:sensord_openrc
+ 	"
++_prog_extra=
++if [ -z "$BOOTSTRAP" ] && [ -z "$APORTS_BOOTSTRAP" ]; then
++	# sensord stores its readings with RRDtool, which pulls in cairo and pango
++	_prog_extra=sensord
++	makedepends="$makedepends rrdtool-dev"
++	subpackages="$subpackages
++		$pkgname-sensord
++		$pkgname-sensord-openrc:sensord_openrc
++		"
++fi
+ install="$pkgname.post-upgrade"
+ 
+ source="$pkgname-$pkgver.tar.gz::https://github.com/lm-sensors/lm-sensors/archive/V$_ver.tar.gz
+@@ -32,7 +40,9 @@ source="$pkgname-$pkgver.tar.gz::https://github.com/lm-sensors/lm-sensors/archiv
+ builddir="$srcdir"/$pkgname-$_ver
+ 
+ prepare() {
+-	sed -i -e 's:^# \(PROG_EXTRA\):\1:' Makefile
++	if [ -n "$_prog_extra" ]; then
++		sed -i -e 's:^# \(PROG_EXTRA\):\1:' Makefile
++	fi
+ 	# Respect LDFLAGS
+ 	sed -i -e 's/\$(LIBDIR)$/\$(LIBDIR) \$(LDFLAGS)/g' Makefile
+ 	sed -i -e 's/\$(LIBSHSONAME) -o/$(LIBSHSONAME) \$(LDFLAGS) -o/g' \
+@@ -50,7 +60,7 @@ build() {
+ }
+ 
+ package() {
+-	make PROG_EXTRA:=sensord user_install \
++	make PROG_EXTRA:="$_prog_extra" user_install \
+ 		PREFIX=/usr \
+ 		MANDIR=/usr/share/man \
+ 		DESTDIR="$pkgdir"
+-- 
+2.43.0
+
